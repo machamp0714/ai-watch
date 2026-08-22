@@ -11,7 +11,7 @@ from .adapters.base import FetchContext, TimeWindow, make_client
 from .claude_runner import ClaudeRunner
 from .collect import collect
 from .config import Settings
-from .decisions import DecisionStore, sync_decisions
+from .decisions import DecisionStore, apply_decisions, parse_digest, sync_decisions
 from .models import Item, raw_from_dict, raw_to_dict
 from .normalize import normalize
 from .notify import log_line, notify
@@ -65,6 +65,15 @@ class Work:
 
 
 _EMPTY = {"items": [], "warnings": [], "counts": {}}
+
+
+def _carry_over_checks(md: str, ids: set[str]) -> str:
+    """既存ダイジェストでチェック済みだった id の行を、新しい md でも [x] にする。"""
+    lines = md.splitlines()
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("- [ ] ") and any(f"^{iid}" in line for iid in ids):
+            lines[i] = line.replace("- [ ] ", "- [x] ", 1)
+    return "\n".join(lines) + "\n"
 
 
 def run_nightly(
@@ -139,6 +148,19 @@ def run_nightly(
 
         # 5. render + finalize -----------------------------------------------------
         md = render_digest(day, {i.id: i for i in new_items}, outcome, warnings, total_collected=len(all_items))
+        if not dry_run:
+            # 同日再実行（--from triage/render）で、日中に人がつけたチェックを失わないようにする:
+            # 既存ダイジェストのチェックを回収・記録してから、新しい md にも同じチェックを引き継ぐ。
+            existing = vault.read_digest(day)
+            if existing is not None:
+                found = parse_digest(existing, day, day)
+                carried_added = store.filter_new(found)
+                apply_decisions(carried_added, vault)
+                store.append(carried_added)
+                decisions_added += len(carried_added)
+                checked_ids = {d.id for d in found}
+                if checked_ids:
+                    md = _carry_over_checks(md, checked_ids)
         shown = shown_item_ids(md)
         digest_path = (work.dir / "digest.md") if dry_run else vault.digest_path(day)
         Vault.write_atomic(digest_path, md)

@@ -119,6 +119,39 @@ def test_sync_decisions_runs_before_triage(tmp_path):
     assert json.loads((s.data_dir / "decisions.jsonl").read_text().splitlines()[0])["decision"] == "try"
 
 
+def test_rerun_preserves_checked_boxes(tmp_path):
+    s = _settings(tmp_path)
+    v = Vault(s.vault_dir)
+    v.write_atomic(v.backlog, "# Backlog\n\n## 候補\n")
+    v.write_atomic(v.profile, "興味: Claude Code")
+    runner = FakeRunner()
+    run_nightly(s, DAY, now=NOW, runner=runner, http=_http(), notifier=lambda t, m: None)
+
+    md = v.read_digest(DAY)
+    lines = md.splitlines()
+    checked_line = None
+    for i, line in enumerate(lines):
+        if line.startswith("- [ ] 🧪"):
+            lines[i] = line.replace("- [ ] 🧪", "- [x] 🧪", 1)
+            checked_line = lines[i]
+            break
+    assert checked_line is not None
+    checked_id = re.search(r"\^(aw-[0-9a-f]{8})", checked_line).group(1)
+    v.write_atomic(v.digest_path(DAY), "\n".join(lines) + "\n")
+
+    r = run_nightly(s, DAY, from_stage="triage", now=NOW, runner=runner, http=None, notifier=lambda t, m: None)
+
+    store_lines = (s.data_dir / "decisions.jsonl").read_text().splitlines()
+    decisions = [json.loads(l) for l in store_lines]
+    assert any(d["id"] == checked_id and d["decision"] == "try" for d in decisions)
+    assert f"^{checked_id}" in v.backlog.read_text()
+
+    new_md = v.read_digest(DAY)
+    new_line = next(l for l in new_md.splitlines() if f"^{checked_id}" in l)
+    assert new_line.startswith("- [x] 🧪")
+    assert r.decisions_added >= 1
+
+
 def test_rerun_from_stage_without_work_files_raises_and_keeps_digest(tmp_path):
     s = _settings(tmp_path)
     v = Vault(s.vault_dir)
