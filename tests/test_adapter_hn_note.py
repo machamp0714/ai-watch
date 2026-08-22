@@ -46,8 +46,18 @@ NOTE_JSON = {"data": {"notes": {"total_count": 1, "contents": [
 ]}}}
 
 
+def _note_responder(req: httpx.Request) -> httpx.Response:
+    q = parse_qs(req.url.query.decode())
+    assert req.url.host == "note.com"
+    assert req.url.path == "/api/v3/searches"
+    assert q["context"] == ["note"]
+    assert q["q"] == ["Claude Code"]
+    assert q["size"] == ["20"]
+    return httpx.Response(200, content=json.dumps(NOTE_JSON).encode())
+
+
 def test_note_search(make_ctx):
-    ctx = make_ctx(lambda req: httpx.Response(200, content=json.dumps(NOTE_JSON).encode()))
+    ctx = make_ctx(_note_responder)
     cfg = SourceConfig(id="note", type="note_search", group="jp", params={"queries": ["Claude Code"], "size": 20})
     items = NoteSearchAdapter().fetch(cfg, WINDOW, ctx)
     assert len(items) == 1

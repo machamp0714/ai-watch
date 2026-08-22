@@ -51,6 +51,9 @@ class HtmlDiffAdapter:
             if pattern.search(absolute) and absolute not in links:
                 links[absolute] = text
 
+        if not links:
+            raise RuntimeError(f"no links matched link_pattern on {page_url}")
+
         state_path = ctx.data_dir / "state" / "html_diff" / f"{cfg.id}.json"
         known: set[str] | None = set(json.loads(state_path.read_text())) if state_path.exists() else None
         state_path.parent.mkdir(parents=True, exist_ok=True)
