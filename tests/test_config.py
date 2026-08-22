@@ -26,9 +26,11 @@ sources:
 """
 
 
-def test_load_settings(tmp_path: Path):
+def test_load_settings(tmp_path: Path, monkeypatch):
     p = tmp_path / "sources.yaml"
     p.write_text(YAML)
+    monkeypatch.delenv("AI_WATCH_VAULT_DIR", raising=False)
+    monkeypatch.delenv("AI_WATCH_DATA_DIR", raising=False)
     s = load_settings(p)
     assert s.vault_dir == Path("/tmp/ai-watch-vault")
     assert s.data_dir == tmp_path / "data"          # 相対パスは sources.yaml の場所基準
