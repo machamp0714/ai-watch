@@ -61,3 +61,39 @@ def test_http_error_raises(make_ctx):
         assert False, "should raise"
     except httpx.HTTPStatusError:
         pass
+
+
+def test_rss_retries_once_on_429_with_reset_header(make_ctx):
+    calls = []
+    sleeps = []
+
+    def _responder(req: httpx.Request) -> httpx.Response:
+        calls.append(req)
+        if len(calls) == 1:
+            return httpx.Response(429, headers={"x-ratelimit-reset": "24"})
+        return httpx.Response(200, content=RSS2.encode())
+
+    ctx = make_ctx(_responder)
+    cfg = SourceConfig(id="reddit-claudeai", type="rss", group="en", params={"url": "https://www.reddit.com/feed"})
+    adapter = RssAdapter(sleep=lambda s: sleeps.append(s))
+    items = adapter.fetch(cfg, WINDOW, ctx)
+    assert [i.title for i in items] == ["Claude Code の hooks 入門", "無関係な記事"]
+    assert sleeps == [25]
+    assert len(calls) == 2
+
+
+def test_rss_429_twice_raises(make_ctx):
+    sleeps = []
+
+    def _responder(req: httpx.Request) -> httpx.Response:
+        return httpx.Response(429, headers={"Retry-After": "5"})
+
+    ctx = make_ctx(_responder)
+    cfg = SourceConfig(id="reddit-claudeai", type="rss", group="en", params={"url": "https://www.reddit.com/feed"})
+    adapter = RssAdapter(sleep=lambda s: sleeps.append(s))
+    try:
+        adapter.fetch(cfg, WINDOW, ctx)
+        assert False, "should raise"
+    except httpx.HTTPStatusError:
+        pass
+    assert sleeps == [6]

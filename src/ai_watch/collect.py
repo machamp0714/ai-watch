@@ -12,7 +12,7 @@ from .adapters import ADAPTERS, FetchContext, TimeWindow
 from .config import Settings, SourceConfig
 from .models import RawItem, raw_to_dict
 
-SAME_HOST_DELAY_S = 1.0
+SAME_HOST_DELAY_S = 2.0
 
 
 class UnknownAdapterError(Exception):
