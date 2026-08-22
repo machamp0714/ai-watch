@@ -11,6 +11,11 @@ from .config import Settings, SourceConfig
 from .models import RawItem, raw_to_dict
 
 
+class UnknownAdapterError(Exception):
+    """未知の adapter type が指定された場合の例外。"""
+    pass
+
+
 @dataclass
 class CollectResult:
     items: list[RawItem] = field(default_factory=list)
@@ -28,7 +33,7 @@ def save_raw(data_dir: Path, day: date, source_id: str, items: list[RawItem]) ->
 def _fetch_one(cfg: SourceConfig, window: TimeWindow, ctx: FetchContext) -> list[RawItem]:
     adapter = ADAPTERS.get(cfg.type)
     if adapter is None:
-        raise KeyError(f"unknown adapter type '{cfg.type}'")
+        raise UnknownAdapterError(f"unknown adapter type '{cfg.type}'")
     return adapter.fetch(cfg, window, ctx)
 
 
@@ -49,14 +54,14 @@ def collect(
         for fut, cfg in futures.items():
             try:
                 fetched = fut.result()
-            except KeyError as e:
-                result.warnings.append(f"{cfg.id}: {e.args[0]}")
+                save_raw(settings.data_dir, day, cfg.id, fetched)
+                kept = [i for i in fetched if i.published_at is None or window.contains(i.published_at)]
+                result.items.extend(kept)
+                result.counts[cfg.id] = len(kept)
+            except UnknownAdapterError as e:
+                result.warnings.append(f"{cfg.id}: {e}")
                 continue
             except Exception as e:  # ソース単位の障害分離
                 result.warnings.append(f"{cfg.id}: {type(e).__name__}: {e}"[:200])
                 continue
-            save_raw(settings.data_dir, day, cfg.id, fetched)
-            kept = [i for i in fetched if i.published_at is None or window.contains(i.published_at)]
-            result.items.extend(kept)
-            result.counts[cfg.id] = len(kept)
     return result

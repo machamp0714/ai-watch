@@ -48,3 +48,16 @@ def test_collect_only_ids(make_ctx, tmp_path):
                SourceConfig(id="bad", type="rss", group="en", params={"url": "https://fail/feed"})]
     res = collect(_settings(tmp_path, sources), WINDOW, make_ctx(_responder), only_ids={"good"}, day=date(2026, 8, 22))
     assert res.warnings == [] and res.counts == {"good": 2}
+
+
+def test_collect_isolates_adapter_internal_keyerror(make_ctx, tmp_path):
+    sources = [
+        SourceConfig(id="good", type="rss", group="en", params={"url": "https://ok/feed"}),
+        SourceConfig(id="nourl", type="rss", group="en", params={}),  # missing url パラメータ
+    ]
+    res = collect(_settings(tmp_path, sources), WINDOW, make_ctx(_responder), day=date(2026, 8, 22))
+    # good source は正常に集められる
+    assert [i.title for i in res.items] == ["recent", "undated"]
+    assert res.counts == {"good": 2}
+    # nourl source の KeyError は warning になり、collect() は継続する
+    assert any(w.startswith("nourl: KeyError") for w in res.warnings)
