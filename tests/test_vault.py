@@ -46,3 +46,19 @@ def test_append_line_and_profile(tmp_path):
     assert v.read_profile() == ""
     v.profile.write_text("# Profile")
     assert v.read_profile() == "# Profile"
+
+
+def test_init_vault_creates_missing_only(tmp_path):
+    from ai_watch.vault import init_vault
+    tpl = tmp_path / "templates" / "vault"
+    tpl.mkdir(parents=True)
+    for name in ("CLAUDE.md", "profile.md", "backlog.md", "outputs.md", "log.md"):
+        (tpl / name).write_text(f"T:{name}")
+    v = Vault(tmp_path / "vault")
+    v.write_atomic(v.profile, "my profile")
+    created = init_vault(v, tpl)
+    assert {p.name for p in created} == {"CLAUDE.md", "backlog.md", "outputs.md", "log.md", "digests", "experiments"}
+    assert v.profile.read_text() == "my profile"           # 既存は守る
+    assert v.backlog.read_text() == "T:backlog.md"
+    assert v.digests.is_dir() and v.experiments.is_dir()
+    assert init_vault(v, tpl) == []

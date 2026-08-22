@@ -80,3 +80,18 @@ class Vault:
         lines.insert(insert_at, line)
         self.write_atomic(path, "\n".join(lines).rstrip("\n") + "\n")
         return True
+
+
+def init_vault(vault: Vault, templates_dir: Path) -> list[Path]:
+    """テンプレートから vault の初期ファイルを作る。既存ファイルは触らない。"""
+    created: list[Path] = []
+    for d in (vault.digests, vault.experiments):
+        if not d.exists():
+            d.mkdir(parents=True)
+            created.append(d)
+    for name in ("CLAUDE.md", "profile.md", "backlog.md", "outputs.md", "log.md"):
+        target = vault.root / name
+        if not target.exists():
+            vault.write_atomic(target, (templates_dir / name).read_text(encoding="utf-8"))
+            created.append(target)
+    return created
