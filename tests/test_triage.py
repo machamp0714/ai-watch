@@ -83,3 +83,18 @@ def test_triage_empty_items_does_not_call_runner(tmp_path):
 def test_outcome_roundtrip():
     o = TriageOutcome("untriaged", fallback_rank([_item("aw-1", "t", {"likes": 2})]), 0.1, "e")
     assert TriageOutcome.from_dict(o.to_dict()) == o
+
+
+def test_parse_triage_coerces_bad_category_and_non_list_items():
+    from ai_watch.triage import parse_triage
+    # Non-list items should be coerced to empty list
+    result = parse_triage({"items": "oops"}, ["aw-1"])
+    assert len(result) == 1 and result[0].id == "aw-1" and result[0].category == "noise"
+    # Bad category should be coerced to "noise"
+    result = parse_triage({"items": [{"id": "aw-1", "category": "banana", "score": 5, "signals": {}, "reason": "r"}]}, ["aw-1"])
+    assert result[0].category == "noise" and result[0].score == 5
+
+
+def test_fallback_rank_handles_negative_metrics_and_no_mentions():
+    result = fallback_rank([_item("aw-1", "t", {"points": -5}, ())])
+    assert result[0].score == 0 and 0 <= result[0].score <= 100

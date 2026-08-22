@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
@@ -63,13 +63,19 @@ def parse_triage(data: dict[str, Any], known_ids: list[str]) -> list[TriagedItem
     """出力を TriagedItem に。未知 id は捨て、欠けた id は noise。"""
     known = set(known_ids)
     out: dict[str, TriagedItem] = {}
-    for row in data.get("items", []):
+    rows = data.get("items")
+    rows = rows if isinstance(rows, list) else []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
         iid = row.get("id")
         if iid not in known or iid in out:
             continue
         signals = row.get("signals") or {}
+        cat = row.get("category")
+        category = cat if cat in ("update", "try", "read", "noise") else "noise"
         out[iid] = TriagedItem(
-            id=iid, category=row.get("category", "noise"), score=_clamp(row.get("score"), 0, 100),
+            id=iid, category=category, score=_clamp(row.get("score"), 0, 100),
             signals={k: _clamp(signals.get(k), 0, 3) for k in ("attention", "tryability", "jp_gap", "relevance")},
             reason=str(row.get("reason") or ""), try_plan=str(row.get("try_plan") or ""),
             article_angle=str(row.get("article_angle") or ""),
@@ -84,8 +90,8 @@ def parse_triage(data: dict[str, Any], known_ids: list[str]) -> list[TriagedItem
 def fallback_rank(items: list[Item]) -> list[TriagedItem]:
     """LLM が使えない日の順位付け: log(metrics 合計) と mentions 数。全て read。"""
     def score(it: Item) -> int:
-        m = sum(it.metrics.values())
-        return int(min(100, 20 * math.log10(m + 1) + 15 * (len(it.mentions) - 1)))
+        m = max(0, sum(it.metrics.values()))
+        return max(0, min(100, int(20 * math.log10(m + 1) + 15 * (len(it.mentions) - 1))))
     ranked = sorted(items, key=score, reverse=True)
     return [TriagedItem(id=it.id, category="read", score=score(it),
                         signals={"attention": 0, "tryability": 0, "jp_gap": 0, "relevance": 0},
