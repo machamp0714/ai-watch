@@ -12,6 +12,7 @@ from .claude_runner import ClaudeRunner
 from .collect import collect
 from .config import Settings, load_settings
 from .decisions import DecisionStore, sync_decisions
+from .doctor import cmd_doctor
 from .pipeline import STAGES, run_nightly, today_jst
 from .vault import Vault, init_vault
 
@@ -98,6 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("sync", help="ダイジェストのチェックを今すぐ backlog / outputs に反映").set_defaults(func=cmd_sync)
     sub.add_parser("init-vault", help="vault に初期ファイルを作る（既存は触らない）").set_defaults(func=cmd_init_vault)
+    sub.add_parser("doctor", help="実行環境の事前チェック").set_defaults(func=cmd_doctor)
     return p
 
 
