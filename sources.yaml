@@ -27,10 +27,13 @@ sources:
     group: official
     url: https://openai.com/news/rss.xml
   - id: claude-docs-release-notes
-    type: html_diff
+    type: github_file_sections
     group: official
-    url: https://docs.claude.com/en/release-notes/overview
-    link_pattern: 'docs\.claude\.com/en/release-notes/'
+    url: https://docs.claude.com/en/release-notes/overview.md
+    page_url: https://docs.claude.com/en/release-notes/overview
+    section_pattern: '^### ([A-Z][a-z]+ \d{1,2}, \d{4})'
+    title_prefix: "Claude Platform release notes "
+    max_sections: 5
   - id: anthropic-news
     type: html_diff
     group: official

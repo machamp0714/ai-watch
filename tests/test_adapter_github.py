@@ -58,3 +58,32 @@ def test_sections_newest_first_with_fragment_urls(make_ctx):
     assert items[0].url == "https://github.com/anthropics/claude-code/blob/main/CHANGELOG.md#2.1.239"
     assert items[0].published_at is None                    # 日付なし → seen で新着判定
     assert "Cost estimates" in items[0].excerpt and "Fixed a thing" not in items[0].excerpt
+
+
+RELEASE_NOTES = """# Release notes
+
+### August 20, 2026
+
+- Added `/claude-api upgrade`
+
+### August 13, 2026
+
+- Fixed a thing
+"""
+
+
+def test_sections_slugifies_date_headings_for_fragment(make_ctx):
+    ctx = make_ctx(lambda req: httpx.Response(200, content=RELEASE_NOTES.encode()))
+    cfg = SourceConfig(id="claude-docs-release-notes", type="github_file_sections", group="official", params={
+        "url": "https://docs.claude.com/en/release-notes/overview.md",
+        "page_url": "https://docs.claude.com/en/release-notes/overview",
+        "section_pattern": r"^### ([A-Z][a-z]+ \d{1,2}, \d{4})",
+        "title_prefix": "Claude Platform release notes ", "max_sections": 5,
+    })
+    items = GithubFileSectionsAdapter().fetch(cfg, WINDOW, ctx)
+    assert [i.title for i in items] == [
+        "Claude Platform release notes August 20, 2026",
+        "Claude Platform release notes August 13, 2026",
+    ]
+    assert items[0].url == "https://docs.claude.com/en/release-notes/overview#august-20-2026"
+    assert items[1].url == "https://docs.claude.com/en/release-notes/overview#august-13-2026"

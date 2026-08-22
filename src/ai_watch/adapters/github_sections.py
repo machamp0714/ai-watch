@@ -6,6 +6,14 @@ from ..config import SourceConfig
 from ..models import RawItem
 from .base import FetchContext, TimeWindow, excerpt
 
+_SLUG_DROP = re.compile(r"[^a-z0-9.-]")
+
+
+def _slug(group: str) -> str:
+    """見出しの group(1) から URL フラグメントを作る: 小文字化 → 空白は '-' → [a-z0-9.-] 以外は削除。
+    例: '2.1.239' -> '2.1.239'（変化なし）, 'August 20, 2026' -> 'august-20-2026'。"""
+    return _SLUG_DROP.sub("", group.lower().replace(" ", "-"))
+
 
 class GithubFileSectionsAdapter:
     """Markdown ファイル（CHANGELOG.md 等）を見出しで分割し、先頭 N セクションを返す。
@@ -28,7 +36,7 @@ class GithubFileSectionsAdapter:
             body = text[m.end():end].strip()
             version = m.group(1)
             out.append(RawItem(
-                source=cfg.id, url=f"{page_url}#{version}", title=f"{prefix}{version}".strip(),
+                source=cfg.id, url=f"{page_url}#{_slug(version)}", title=f"{prefix}{version}".strip(),
                 excerpt=excerpt(body, 800), published_at=None, lang="en",
             ))
         return out
