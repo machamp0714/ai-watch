@@ -6,6 +6,12 @@ import pytest
 from ai_watch.adapters.base import FetchContext
 
 
+@pytest.fixture(autouse=True)
+def _isolate_ai_watch_env(monkeypatch):
+    for k in ("AI_WATCH_VAULT_DIR", "AI_WATCH_DATA_DIR", "AI_WATCH_CONFIG"):
+        monkeypatch.delenv(k, raising=False)
+
+
 @pytest.fixture
 def make_ctx(tmp_path: Path):
     """responder(request) -> httpx.Response を渡すと、ネットワークに出ない FetchContext を返す。"""
