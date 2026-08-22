@@ -10,6 +10,8 @@ from ..config import SourceConfig
 from ..models import RawItem
 from .base import FetchContext, TimeWindow
 
+_EPOCH_ISO = datetime(1970, 1, 1, tzinfo=timezone.utc).isoformat()
+
 
 class _LinkCollector(HTMLParser):
     def __init__(self) -> None:
@@ -35,7 +37,13 @@ class _LinkCollector(HTMLParser):
 
 class HtmlDiffAdapter:
     """RSS の無いページ向け。<a href> のうち link_pattern に合う絶対 URL の集合を前回と比較し、増えた分を返す。
-    初回は状態を記録するだけで 0 件（過去記事で溢れさせない）。本文はパースしない。"""
+    本文はパースしない。
+
+    状態ファイルは {url: 初出時刻(ISO)}。dry-run や `collect --only` で何度取得しても状態を消費しないよう、
+    各 URL の「初めて見つかった時刻」を保持し、window.start 以降に初出したリンクだけを返す
+    （既に見えているリンクは、再取得しても初出時刻を更新しない）。
+    初回は現在のリンク集合を epoch(1970-01-01) として記録し 0 件を返す（過去記事で溢れさせない）。
+    旧形式（URL の list）の状態ファイルは epoch 初出として読み替える。"""
 
     def fetch(self, cfg: SourceConfig, window: TimeWindow, ctx: FetchContext) -> list[RawItem]:
         page_url = cfg.params["url"]
@@ -55,15 +63,28 @@ class HtmlDiffAdapter:
             raise RuntimeError(f"no links matched link_pattern on {page_url}")
 
         state_path = ctx.data_dir / "state" / "html_diff" / f"{cfg.id}.json"
-        known: set[str] | None = set(json.loads(state_path.read_text())) if state_path.exists() else None
         state_path.parent.mkdir(parents=True, exist_ok=True)
-        state_path.write_text(json.dumps(sorted(links), ensure_ascii=False, indent=0))
-        if known is None:
+        raw_state = json.loads(state_path.read_text()) if state_path.exists() else None
+
+        if raw_state is None:
+            state: dict[str, str] = {u: _EPOCH_ISO for u in links}
+            state_path.write_text(json.dumps(state, ensure_ascii=False, indent=0, sort_keys=True))
             return []
 
-        now = datetime.now(timezone.utc)
-        return [
-            RawItem(source=cfg.id, url=u, title=links[u] or u, excerpt="", published_at=now,
-                    lang=cfg.params.get("lang", "en"))
-            for u in links if u not in known
-        ]
+        state = {u: _EPOCH_ISO for u in raw_state} if isinstance(raw_state, list) else dict(raw_state)
+        now_iso = datetime.now(timezone.utc).isoformat()
+        for u in links:
+            if u not in state:
+                state[u] = now_iso
+        state_path.write_text(json.dumps(state, ensure_ascii=False, indent=0, sort_keys=True))
+
+        out: list[RawItem] = []
+        for u, text in links.items():
+            first_seen_iso = state.get(u)
+            if first_seen_iso is None:
+                continue
+            first_seen = datetime.fromisoformat(first_seen_iso)
+            if first_seen >= window.start:
+                out.append(RawItem(source=cfg.id, url=u, title=text or u, excerpt="",
+                                   published_at=first_seen, lang=cfg.params.get("lang", "en")))
+        return out
