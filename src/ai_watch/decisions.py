@@ -90,10 +90,13 @@ def apply_decisions(new: list[Decision], vault: Vault) -> None:
             vault.insert_under_heading(vault.outputs, "## 投稿待ち", outputs_line(d), dedupe_key=f"^{d.id}")
 
 
-def sync_decisions(vault: Vault, store: DecisionStore, today: date, *, apply: bool = True, days: int = 7) -> list[Decision]:
+def sync_decisions(
+    vault: Vault, store: DecisionStore, today: date, *, apply: bool = True, days: int = 7,
+    include_today: bool = False,
+) -> list[Decision]:
     """直近 days 日のダイジェストを読み直してチェックを回収し、store と vault に反映する。毎晩呼んでも冪等。"""
     found: list[Decision] = []
-    for digest_date, md in vault.recent_digests(today, days=days):
+    for digest_date, md in vault.recent_digests(today, days=days, include_today=include_today):
         found.extend(parse_digest(md, digest_date, today))
     added = store.filter_new(found)
     if apply:

@@ -33,9 +33,10 @@ class Vault:
         p = self.digest_path(day)
         return p.read_text(encoding="utf-8") if p.exists() else None
 
-    def recent_digests(self, today: date, days: int = 7) -> list[tuple[date, str]]:
+    def recent_digests(self, today: date, days: int = 7, *, include_today: bool = False) -> list[tuple[date, str]]:
         out = []
-        for back in range(1, days + 1):
+        start = 0 if include_today else 1
+        for back in range(start, days + 1):
             d = today - timedelta(days=back)
             text = self.read_digest(d)
             if text is not None:

@@ -21,6 +21,16 @@ def test_recent_digests_excludes_today_and_missing(tmp_path):
     assert [(d.isoformat(), t) for d, t in got] == [("2026-08-21", "2026-08-21"), ("2026-08-20", "2026-08-20")]
 
 
+def test_recent_digests_include_today(tmp_path):
+    v = Vault(tmp_path)
+    for d in ("2026-08-20", "2026-08-21", "2026-08-22"):
+        v.write_atomic(v.digests / f"{d}.md", d)
+    got = v.recent_digests(date(2026, 8, 22), days=7, include_today=True)
+    assert [(d.isoformat(), t) for d, t in got] == [
+        ("2026-08-22", "2026-08-22"), ("2026-08-21", "2026-08-21"), ("2026-08-20", "2026-08-20"),
+    ]
+
+
 def test_insert_under_heading(tmp_path):
     v = Vault(tmp_path)
     p = tmp_path / "outputs.md"

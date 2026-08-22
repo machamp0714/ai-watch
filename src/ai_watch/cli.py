@@ -61,7 +61,7 @@ def cmd_x_collect(settings: Settings, args: argparse.Namespace) -> int:
 def cmd_sync(settings: Settings, args: argparse.Namespace) -> int:
     vault = Vault(settings.vault_dir)
     store = DecisionStore(settings.data_dir / "decisions.jsonl")
-    added = sync_decisions(vault, store, today_jst())
+    added = sync_decisions(vault, store, today_jst(), include_today=True)
     print(f"added {len(added)} decision(s)")
     for d in added:
         print(f"- [{d.decision}] {d.title}")
