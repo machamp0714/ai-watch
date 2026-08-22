@@ -5,6 +5,7 @@ from .github_sections import GithubFileSectionsAdapter
 from .hn_algolia import HnAlgoliaAdapter
 from .note_search import NoteSearchAdapter
 from .html_diff import HtmlDiffAdapter
+from .x_mcp import XMcpAdapter
 
 ADAPTERS: dict[str, Adapter] = {
     "rss": RssAdapter(),
@@ -13,6 +14,7 @@ ADAPTERS: dict[str, Adapter] = {
     "hn_algolia": HnAlgoliaAdapter(),
     "note_search": NoteSearchAdapter(),
     "html_diff": HtmlDiffAdapter(),
+    "x_mcp": XMcpAdapter(),
 }
 
 __all__ = ["ADAPTERS", "Adapter", "FetchContext", "TimeWindow"]
