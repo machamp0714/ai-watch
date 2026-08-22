@@ -70,11 +70,13 @@ class ClaudeRunner:
                                  timeout=timeout_s, cwd=self.cwd)
             except subprocess.TimeoutExpired:
                 last_error = "timeout"
+                last_subtype = "timeout"
                 continue
             try:
                 payload = json.loads(proc.stdout)
             except json.JSONDecodeError:
                 last_error = f"non-json stdout (rc={proc.returncode}): {proc.stderr[-300:]}"
+                last_subtype = "non_json"
                 continue
             total_cost += float(payload.get("total_cost_usd") or 0.0)
             last_subtype = str(payload.get("subtype", ""))

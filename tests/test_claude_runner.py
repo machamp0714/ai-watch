@@ -49,9 +49,14 @@ def test_build_command_with_mcp():
 
 def test_success_passes_prompt_on_stdin():
     fake = FakeRun([_ok(1)])
-    r = ClaudeRunner(run=fake).run("PROMPT", SCHEMA, budget_usd=2.0)
+    r = ClaudeRunner(run=fake, cwd=Path("/w")).run("PROMPT", SCHEMA, budget_usd=2.0)
     assert r.ok and r.data == {"n": 1} and r.cost_usd == 0.05 and r.subtype == "success"
-    assert fake.calls[0][1]["input"] == "PROMPT"
+    kw = fake.calls[0][1]
+    assert kw["input"] == "PROMPT"
+    assert kw["text"] is True
+    assert kw["capture_output"] is True
+    assert kw["timeout"] == 900
+    assert kw["cwd"] == Path("/w")
 
 
 def test_retries_on_invalid_json_then_succeeds():
@@ -76,4 +81,11 @@ def test_budget_error_does_not_retry():
 def test_timeout_is_failure():
     fake = FakeRun([subprocess.TimeoutExpired("claude", 1)])
     r = ClaudeRunner(run=fake).run("p", SCHEMA, budget_usd=2.0, retries=0)
-    assert not r.ok and r.error == "timeout"
+    assert not r.ok and r.error == "timeout" and r.subtype == "timeout"
+
+
+def test_mixed_failure_does_not_leak_success_subtype():
+    bad = json.dumps({"type": "result", "subtype": "success", "structured_output": {"n": "x"}, "total_cost_usd": 0.1})
+    fake = FakeRun([bad, subprocess.TimeoutExpired("claude", 1)])
+    r = ClaudeRunner(run=fake).run("p", SCHEMA, budget_usd=2.0, retries=1)
+    assert not r.ok and r.subtype == "timeout" and r.error == "timeout" and r.cost_usd == 0.1
