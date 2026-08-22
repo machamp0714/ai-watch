@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "playwright": {
+      "command": "/Users/ooidetatsuya/.nodenv/shims/npx",
+      "args": [
+        "@playwright/mcp@latest",
+        "--headless",
+        "--browser", "chrome",
+        "--user-data-dir", "/Users/ooidetatsuya/repo/ai-watch/data/playwright-profile",
+        "--allowed-origins", "https://x.com;https://*.x.com;https://*.twimg.com",
+        "--output-dir", "/Users/ooidetatsuya/repo/ai-watch/data/playwright-out"
+      ]
+    }
+  }
+}
