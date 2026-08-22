@@ -59,8 +59,11 @@ def _clamp(v: Any, lo: int, hi: int) -> int:
         return lo
 
 
-def parse_triage(data: dict[str, Any], known_ids: list[str]) -> list[TriagedItem]:
-    """出力を TriagedItem に。未知 id は捨て、欠けた id は noise。"""
+def parse_triage(data: dict[str, Any], known_ids: list[str], groups: dict[str, str] | None = None) -> list[TriagedItem]:
+    """出力を TriagedItem に。未知 id は捨て、欠けた id は noise。
+    groups（id → group）が渡された場合、category が update で group が "official" でない
+    アイテムは read に格下げする（公式以外を「公式アップデート」として出さないため。
+    id が groups に無い場合も安全側に倒して格下げする）。"""
     known = set(known_ids)
     out: dict[str, TriagedItem] = {}
     rows = data.get("items")
@@ -74,6 +77,8 @@ def parse_triage(data: dict[str, Any], known_ids: list[str]) -> list[TriagedItem
         signals = row.get("signals") or {}
         cat = row.get("category")
         category = cat if cat in ("update", "try", "read", "noise") else "noise"
+        if groups is not None and category == "update" and groups.get(iid) != "official":
+            category = "read"
         out[iid] = TriagedItem(
             id=iid, category=category, score=_clamp(row.get("score"), 0, 100),
             signals={k: _clamp(signals.get(k), 0, 3) for k in ("attention", "tryability", "jp_gap", "relevance")},
@@ -110,4 +115,5 @@ def triage(
     res = runner.run(prompt, schema, budget_usd=budget_usd, effort="low", retries=1)
     if not res.ok:
         return TriageOutcome("untriaged", fallback_rank(items), res.cost_usd, res.error)
-    return TriageOutcome("triaged", parse_triage(res.data, [it.id for it in items]), res.cost_usd)
+    groups = {it.id: it.group for it in items}
+    return TriageOutcome("triaged", parse_triage(res.data, [it.id for it in items], groups=groups), res.cost_usd)
