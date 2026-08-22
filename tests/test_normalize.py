@@ -56,3 +56,9 @@ def test_normalize_keeps_distinct_items():
     raws = [RawItem(source="s", url="https://a.com/1", title="One"),
             RawItem(source="s", url="https://a.com/2", title="Two")]
     assert len(normalize(raws, {"s": "misc"})) == 2
+
+
+def test_normalize_keeps_patch_releases_distinct():
+    raws = [RawItem(source="codex-releases", url="https://github.com/openai/codex/releases/tag/rust-v0.50.1", title="Codex rust-v0.50.1"),
+            RawItem(source="codex-releases", url="https://github.com/openai/codex/releases/tag/rust-v0.50.2", title="Codex rust-v0.50.2")]
+    assert len(normalize(raws, {"codex-releases": "official"})) == 2

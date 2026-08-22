@@ -34,7 +34,7 @@ def item_id(url: str) -> str:
     return "aw-" + hashlib.sha1(canonical_url(url).encode("utf-8")).hexdigest()[:8]
 
 
-_WORD = re.compile(r"[0-9A-Za-z぀-ヿ一-鿿]{2,}")
+_WORD = re.compile(r"[0-9]+|[A-Za-z぀-ヿ一-鿿]{2,}")
 
 
 def _title_tokens(title: str) -> set[str]:
