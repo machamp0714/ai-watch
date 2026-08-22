@@ -89,3 +89,25 @@ def test_mixed_failure_does_not_leak_success_subtype():
     fake = FakeRun([bad, subprocess.TimeoutExpired("claude", 1)])
     r = ClaudeRunner(run=fake).run("p", SCHEMA, budget_usd=2.0, retries=1)
     assert not r.ok and r.subtype == "timeout" and r.error == "timeout" and r.cost_usd == 0.1
+
+
+def test_missing_binary_fails_without_retry():
+    fake = FakeRun([FileNotFoundError("[Errno 2] No such file or directory: 'claude'")])
+    r = ClaudeRunner(run=fake).run("p", SCHEMA, budget_usd=2.0, retries=1)
+    assert not r.ok and r.subtype == "spawn_error" and len(fake.calls) == 1
+    assert "spawn failed" in r.error
+
+
+def test_non_dict_json_retries_then_succeeds():
+    fake = FakeRun(["[]", _ok(3)])
+    r = ClaudeRunner(run=fake).run("p", SCHEMA, budget_usd=2.0, retries=1)
+    assert r.ok and r.data == {"n": 3} and len(fake.calls) == 2
+
+
+def test_failed_attempt_is_logged_to_stderr(capfd):
+    fake = FakeRun(["not json", _ok(2)])
+    r = ClaudeRunner(run=fake).run("p", SCHEMA, budget_usd=2.0, retries=1)
+    assert r.ok
+    err = capfd.readouterr().err
+    assert "[claude_runner] attempt 1 failed" in err
+    assert "non_json" in err

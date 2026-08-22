@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
@@ -64,19 +65,40 @@ class ClaudeRunner:
         total_cost = 0.0
         last_error = ""
         last_subtype = ""
-        for _attempt in range(retries + 1):
+
+        def _log_failure(attempt_no: int, proc: subprocess.CompletedProcess | None) -> None:
+            stderr_part = ""
+            if proc is not None and proc.stderr:
+                stderr_part = f" | stderr: {proc.stderr[-500:]}"
+            print(f"[claude_runner] attempt {attempt_no} failed ({last_subtype or 'n/a'}): {last_error}{stderr_part}",
+                  file=sys.stderr)
+
+        for attempt in range(retries + 1):
+            proc = None
             try:
                 proc = self._run(cmd, input=prompt, capture_output=True, text=True,
                                  timeout=timeout_s, cwd=self.cwd)
             except subprocess.TimeoutExpired:
                 last_error = "timeout"
                 last_subtype = "timeout"
+                _log_failure(attempt + 1, proc)
                 continue
+            except OSError as e:
+                last_error = f"spawn failed: {e}"
+                last_subtype = "spawn_error"
+                _log_failure(attempt + 1, proc)
+                break  # バイナリが無い等はリトライしても無駄
             try:
                 payload = json.loads(proc.stdout)
             except json.JSONDecodeError:
                 last_error = f"non-json stdout (rc={proc.returncode}): {proc.stderr[-300:]}"
                 last_subtype = "non_json"
+                _log_failure(attempt + 1, proc)
+                continue
+            if not isinstance(payload, dict):
+                last_error = "non-dict json"
+                last_subtype = "non_json"
+                _log_failure(attempt + 1, proc)
                 continue
             total_cost += float(payload.get("total_cost_usd") or 0.0)
             last_subtype = str(payload.get("subtype", ""))
@@ -86,9 +108,11 @@ class ClaudeRunner:
                     jsonschema.validate(data, schema)
                 except jsonschema.ValidationError as e:
                     last_error = f"schema violation: {e.message}"[:300]
+                    _log_failure(attempt + 1, proc)
                     continue
                 return ClaudeResult(True, data, total_cost, last_subtype, raw=payload)
             last_error = f"{last_subtype}: {payload.get('errors') or payload.get('result', '')}"[:300]
+            _log_failure(attempt + 1, proc)
             if last_subtype == "error_max_budget_usd":
                 break  # 予算超過はリトライしても同じ
         return ClaudeResult(False, None, total_cost, last_subtype, error=last_error)
