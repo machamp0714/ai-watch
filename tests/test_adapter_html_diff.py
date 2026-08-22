@@ -52,6 +52,23 @@ def test_second_run_emits_new_links(make_ctx):
     assert items[0].published_at is not None and items[0].published_at.tzinfo is not None
 
 
+def test_new_link_published_at_is_clamped_to_window_end(make_ctx):
+    # window.end は run_nightly の冒頭で固定される一方、first_seen=now() はその後の fetch
+    # 実行時刻になるため、必ず window.end より後になる。published_at をそのまま返すと
+    # collect() の window.contains() で弾かれ、発見当日に出ない不具合が起きる。
+    past_end = NOW - timedelta(hours=1)
+    past_window = TimeWindow(start=past_end - timedelta(hours=30), end=past_end)
+
+    ctx = make_ctx(_page_v1_responder)
+    HtmlDiffAdapter().fetch(_cfg(), past_window, ctx)
+    ctx = make_ctx(_page_v2_responder)
+    items = HtmlDiffAdapter().fetch(_cfg(), past_window, ctx)
+
+    assert len(items) == 1
+    assert items[0].published_at == past_window.end
+    assert past_window.contains(items[0].published_at)
+
+
 def test_third_run_within_window_emits_again_idempotent(make_ctx):
     ctx = make_ctx(_page_v1_responder)
     HtmlDiffAdapter().fetch(_cfg(), WINDOW, ctx)

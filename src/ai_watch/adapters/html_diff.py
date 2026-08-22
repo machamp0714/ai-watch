@@ -85,6 +85,11 @@ class HtmlDiffAdapter:
                 continue
             first_seen = datetime.fromisoformat(first_seen_iso)
             if first_seen >= window.start:
+                # window.end は呼び出し元（run_nightly）の冒頭で固定されるが、first_seen=now() は
+                # この fetch 実行時刻になるため window.end より後になり得る。window.contains() で
+                # 弾かれて発見当日に出ないことがないよう、返す published_at は window.end に丸める
+                # （状態ファイルに保存する first_seen 自体は丸めない）。
+                published_at = min(first_seen, window.end)
                 out.append(RawItem(source=cfg.id, url=u, title=text or u, excerpt="",
-                                   published_at=first_seen, lang=cfg.params.get("lang", "en")))
+                                   published_at=published_at, lang=cfg.params.get("lang", "en")))
         return out
