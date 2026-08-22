@@ -44,6 +44,22 @@ def test_no_implicit_skip_before_three_days():
     assert ("aw-1b2c3d00", "skip_implicit") not in {(d.id, d.decision) for d in decs}
 
 
+def test_no_implicit_skip_for_untriaged_digest():
+    untriaged_digest = """---
+type: record
+mode: untriaged
+---
+# AI Watch 2026-08-20
+
+## ⚠ 未トリアージ（metrics 順）
+- [x] 🧪 **チェック済み** — 理由 ([hn](https://e.com/1)) ^aw-11111111
+- [ ] 🧪 **未チェック** — 理由 ([hn](https://e.com/2)) ^aw-22222222
+"""
+    decs = parse_digest(untriaged_digest, date(2026, 8, 20), date(2026, 8, 23))
+    got = {(d.id, d.decision) for d in decs}
+    assert got == {("aw-11111111", "try")}                       # explicit [x] は拾うが skip_implicit は出ない
+
+
 def test_store_append_unique_and_recent(tmp_path):
     store = DecisionStore(tmp_path / "decisions.jsonl")
     a = Decision("aw-1", "try", date(2026, 8, 21), date(2026, 8, 20), "A", "https://a")

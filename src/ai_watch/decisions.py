@@ -16,16 +16,26 @@ LINE_RE = re.compile(
 URL_RE = re.compile(r"\((https?://[^\s)]+)\)")
 
 
+_FRONTMATTER_RE = re.compile(r"\A---\n(.*?)\n---", re.S)
+_UNTRIAGED_MODE_RE = re.compile(r"^mode:\s*untriaged\s*$", re.M)
+
+
+def _is_untriaged(md: str) -> bool:
+    fm = _FRONTMATTER_RE.match(md)
+    return bool(fm and _UNTRIAGED_MODE_RE.search(fm.group(1)))
+
+
 def parse_digest(md: str, digest_date: date, today: date, implicit_skip_days: int = 3) -> list[Decision]:
     out: list[Decision] = []
     stale = (today - digest_date).days >= implicit_skip_days
+    untriaged = _is_untriaged(md)
     for m in LINE_RE.finditer(md):
         url_m = URL_RE.search(m["rest"])
         url = url_m.group(1) if url_m else ""
         common = dict(id=m["id"], date=today, digest_date=digest_date, title=m["title"].strip(), url=url)
         if m["mark"] in "xX":
             out.append(Decision(decision="try" if m["emoji"] == "🧪" else "share", **common))
-        elif m["emoji"] == "🧪" and stale:
+        elif m["emoji"] == "🧪" and stale and not untriaged:
             out.append(Decision(decision="skip_implicit", **common))
     return out
 
