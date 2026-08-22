@@ -23,8 +23,12 @@ def run_checks(settings: Settings) -> list[tuple[str, bool, str]]:
     ok, detail = _check_bin(settings.claude_bin)
     if ok:
         try:
-            ver = subprocess.run([settings.claude_bin, "--version"], capture_output=True, text=True, timeout=20).stdout.strip()
-            detail = f"{detail} ({ver})"
+            proc = subprocess.run([settings.claude_bin, "--version"], capture_output=True, text=True, timeout=20)
+            ver = proc.stdout.strip()
+            if proc.returncode != 0 or not ver:
+                ok, detail = False, f"{detail}: --version failed (rc={proc.returncode}): {proc.stderr.strip()[:120]}"
+            else:
+                detail = f"{detail} ({ver})"
         except Exception as e:  # バージョン取得失敗は NG 扱い
             ok, detail = False, f"{detail}: --version failed: {e}"
     out.append(("claude_bin", ok, detail))
@@ -46,10 +50,15 @@ def run_checks(settings: Settings) -> list[tuple[str, bool, str]]:
     except Exception as e:
         out.append(("data_dir", False, f"{settings.data_dir}: {e}"))
 
-    profile = Path(os.path.expanduser("~/repo/ai-watch/data/playwright-profile"))
+    profile = settings.data_dir / "playwright-profile"
     uses_x = any(s.type == "x_mcp" for s in settings.sources)
-    out.append(("playwright_profile", (profile.is_dir() or not uses_x),
-                str(profile) if profile.is_dir() else "missing: run Task 0 login (headed) first"))
+    if profile.is_dir():
+        detail = str(profile)
+    elif uses_x:
+        detail = "missing: run Task 0 login (headed) first"
+    else:
+        detail = "not required (no x_mcp source)"
+    out.append(("playwright_profile", (profile.is_dir() or not uses_x), detail))
 
     unknown = sorted({s.type for s in settings.sources if s.type not in ADAPTERS})
     out.append(("adapters", not unknown, f"{len(settings.sources)} sources" + (f"; unknown types: {unknown}" if unknown else "")))
