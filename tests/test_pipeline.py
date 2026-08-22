@@ -151,6 +151,45 @@ def test_rerun_preserves_checked_boxes(tmp_path):
     assert new_line.startswith("- [x] 🧪")
     assert r.decisions_added >= 1
 
+    # 2 回目の再実行: 既に記録済み（filter_new は空）でも、既存ダイジェストにチェックが
+    # 残っている限り carry-over 対象の id は checked_ids（found 由来）から見つかるはず。
+    r2 = run_nightly(s, DAY, from_stage="triage", now=NOW, runner=runner, http=None, notifier=lambda t, m: None)
+    again_md = v.read_digest(DAY)
+    again_line = next(l for l in again_md.splitlines() if f"^{checked_id}" in l)
+    assert again_line.startswith("- [x] 🧪")
+    assert r2.decisions_added == 0        # 2 回目は新規決定なし
+
+
+def test_rerun_from_render_preserves_checked_boxes(tmp_path):
+    s = _settings(tmp_path)
+    v = Vault(s.vault_dir)
+    v.write_atomic(v.backlog, "# Backlog\n\n## 候補\n")
+    v.write_atomic(v.profile, "興味: Claude Code")
+    runner = FakeRunner()
+    run_nightly(s, DAY, now=NOW, runner=runner, http=_http(), notifier=lambda t, m: None)
+
+    md = v.read_digest(DAY)
+    lines = md.splitlines()
+    checked_line = None
+    for i, line in enumerate(lines):
+        if line.startswith("- [ ] 🧪"):
+            lines[i] = line.replace("- [ ] 🧪", "- [x] 🧪", 1)
+            checked_line = lines[i]
+            break
+    assert checked_line is not None
+    checked_id = re.search(r"\^(aw-[0-9a-f]{8})", checked_line).group(1)
+    v.write_atomic(v.digest_path(DAY), "\n".join(lines) + "\n")
+
+    # --from render は triage をやり直さない（work file のキャッシュを使う）が、
+    # それでもチェックは引き継がれるべき。
+    r = run_nightly(s, DAY, from_stage="render", now=NOW, runner=runner, http=None, notifier=lambda t, m: None)
+
+    assert f"^{checked_id}" in v.backlog.read_text()
+    new_md = v.read_digest(DAY)
+    new_line = next(l for l in new_md.splitlines() if f"^{checked_id}" in l)
+    assert new_line.startswith("- [x] 🧪")
+    assert r.decisions_added >= 1
+
 
 def test_rerun_from_stage_without_work_files_raises_and_keeps_digest(tmp_path):
     s = _settings(tmp_path)
