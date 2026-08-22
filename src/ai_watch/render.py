@@ -21,6 +21,10 @@ def _clean(s: str) -> str:
     return " ".join(re.sub(r"[*\[\]^]", "", s or "").split())
 
 
+def _clean_warning(w: str) -> str:
+    return " ".join((w or "").replace("^", "").split())
+
+
 def _src(it: Item) -> str:
     extra = len(it.mentions) - 1
     return f"{it.source} +{extra}" if extra > 0 else it.source
@@ -35,7 +39,8 @@ def _one_line(s: str) -> str:
 
 
 def _try_lines(it: Item, t: TriagedItem) -> list[str]:
-    lines = [f"- [ ] 🧪 **{_clean(it.title)}** — {_clean(t.reason)} {_link(it)} ^{it.id}"]
+    title = _clean(it.title) or "(no title)"
+    lines = [f"- [ ] 🧪 **{title}** — {_clean(t.reason)} {_link(it)} ^{it.id}"]
     if t.try_plan:
         lines.append(f"  - 試し方: {_clean(_one_line(t.try_plan))}")
     if t.article_angle:
@@ -44,15 +49,18 @@ def _try_lines(it: Item, t: TriagedItem) -> list[str]:
 
 
 def _update_line(it: Item, t: TriagedItem) -> str:
-    return f"- [ ] 📣 **{_clean(it.title)}** — {_clean(t.reason)} {_link(it)} ^{it.id}"
+    title = _clean(it.title) or "(no title)"
+    return f"- [ ] 📣 **{title}** — {_clean(t.reason)} {_link(it)} ^{it.id}"
 
 
 def _read_line(it: Item, t: TriagedItem) -> str:
-    return f"- 📖 **{_clean(it.title)}** — {_clean(t.reason)} {_link(it)} ^{it.id}"
+    title = _clean(it.title) or "(no title)"
+    return f"- 📖 **{title}** — {_clean(t.reason)} {_link(it)} ^{it.id}"
 
 
 def _overflow_line(it: Item, t: TriagedItem) -> str:
-    return f"- {t.category} {t.score} **{_clean(it.title)}** {_link(it)}"
+    title = _clean(it.title) or "(no title)"
+    return f"- {t.category} {t.score} **{title}** {_link(it)}"
 
 
 def shown_item_ids(md: str) -> set[str]:
@@ -64,7 +72,7 @@ def _frontmatter(day: date, mode: str, total: int, shown: int, cost: float, warn
              f"items_total: {total}", f"items_shown: {shown}", f"cost_usd: {cost:.2f}"]
     if warnings:
         lines.append("warnings:")
-        lines += [f'- "{w.replace(chr(34), chr(39))}"' for w in warnings]
+        lines += [f"- '{_clean_warning(w).replace(chr(39), chr(39)*2)}'" for w in warnings]
     else:
         lines.append("warnings: []")
     lines.append("---")
@@ -78,7 +86,7 @@ def render_digest(
     ranked = sorted((t for t in outcome.triaged if t.id in items), key=lambda t: t.score, reverse=True)
     body: list[str] = [f"# AI Watch {day.isoformat()}", ""]
     if warnings:
-        body += [f"> ⚠ 取得失敗: {w}" for w in warnings] + [""]
+        body += [f"> ⚠ 取得失敗: {_clean_warning(w)}" for w in warnings] + [""]
 
     if outcome.mode == "untriaged":
         body += [f"> ⚠ トリアージ失敗（{outcome.error}）。metrics 順の生リストです。", "",
