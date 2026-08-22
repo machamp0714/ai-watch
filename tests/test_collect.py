@@ -1,4 +1,6 @@
 import json
+import threading
+import time
 from datetime import date, datetime, timezone
 
 import httpx
@@ -48,6 +50,38 @@ def test_collect_only_ids(make_ctx, tmp_path):
                SourceConfig(id="bad", type="rss", group="en", params={"url": "https://fail/feed"})]
     res = collect(_settings(tmp_path, sources), WINDOW, make_ctx(_responder), only_ids={"good"}, day=date(2026, 8, 22))
     assert res.warnings == [] and res.counts == {"good": 2}
+
+
+def test_same_host_sources_run_sequentially(make_ctx, tmp_path):
+    calls = []
+    lock = threading.Lock()
+
+    def _responder(req: httpx.Request) -> httpx.Response:
+        start = time.monotonic()
+        time.sleep(0.05)
+        end = time.monotonic()
+        with lock:
+            calls.append((req.url.host, start, end))
+        return httpx.Response(200, content=RSS_OK)
+
+    sources = [
+        SourceConfig(id="ok1", type="rss", group="en", params={"url": "https://ok/feed1"}),
+        SourceConfig(id="ok2", type="rss", group="en", params={"url": "https://ok/feed2"}),
+        SourceConfig(id="other", type="rss", group="en", params={"url": "https://other/feed"}),
+    ]
+    res = collect(_settings(tmp_path, sources), WINDOW, make_ctx(_responder), day=date(2026, 8, 22),
+                  same_host_delay_s=0.02)
+    assert res.warnings == []
+
+    ok_calls = sorted((s, e) for host, s, e in calls if host == "ok")
+    other_calls = [(s, e) for host, s, e in calls if host == "other"]
+    assert len(ok_calls) == 2 and len(other_calls) == 1
+
+    (s1, e1), (s2, e2) = ok_calls
+    assert s2 >= e1                                              # 同じホストは重複しない
+
+    (os_, oe) = other_calls[0]
+    assert any(os_ < e and oe > s for s, e in ok_calls)          # 別ホストは並行して良い
 
 
 def test_collect_isolates_adapter_internal_keyerror(make_ctx, tmp_path):
