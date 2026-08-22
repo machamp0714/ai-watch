@@ -77,3 +77,15 @@ def test_read_only_tools_exclude_mutating_tools():
     joined = " ".join(READ_ONLY_TOOLS)
     for forbidden in ("click", "type", "fill_form", "file_upload", "drag", "select_option"):
         assert forbidden not in joined
+
+
+def test_long_post_keeps_x_post_line(make_ctx, tmp_path):
+    _prepare(tmp_path)
+    data = {"logged_in": True, "posts": [
+        {"url": "https://x.com/a/status/9", "author": "a", "text": "x" * 1500, "posted_at": "",
+         "links": ["https://example.com/p"], "lang": "en"},
+    ]}
+    runner = FakeRunner(ClaudeResult(True, data, 0.3, "success"))
+    items = XMcpAdapter().fetch(_cfg(), WINDOW, make_ctx(lambda r: None, runner=runner))
+    assert "X post: https://x.com/a/status/9" in items[0].excerpt
+    assert len(items[0].excerpt) <= 600

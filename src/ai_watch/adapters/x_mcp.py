@@ -5,7 +5,7 @@ from datetime import timezone
 
 from ..config import SourceConfig
 from ..models import RawItem
-from .base import FetchContext, TimeWindow, parse_iso
+from .base import FetchContext, TimeWindow, excerpt, parse_iso
 
 READ_ONLY_TOOLS = [
     "mcp__playwright__browser_navigate",
@@ -48,7 +48,7 @@ class XMcpAdapter:
             links = [l for l in (p.get("links") or []) if l.startswith("http")]
             post_url = p["url"]
             url = links[0] if len(links) == 1 else post_url
-            excerpt_parts = [text, f"X post: {post_url}"]
+            excerpt_parts = [excerpt(text, 400), f"X post: {post_url}"]
             if len(links) > 1:
                 excerpt_parts.append("links: " + " ".join(links))
             dt = parse_iso(p.get("posted_at") or None)
