@@ -1,0 +1,34 @@
+{
+  "type": "object",
+  "properties": {
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {"type": "string"},
+          "category": {"type": "string", "enum": ["update", "try", "read", "noise"]},
+          "score": {"type": "integer", "minimum": 0, "maximum": 100},
+          "signals": {
+            "type": "object",
+            "properties": {
+              "attention": {"type": "integer", "minimum": 0, "maximum": 3},
+              "tryability": {"type": "integer", "minimum": 0, "maximum": 3},
+              "jp_gap": {"type": "integer", "minimum": 0, "maximum": 3},
+              "relevance": {"type": "integer", "minimum": 0, "maximum": 3}
+            },
+            "required": ["attention", "tryability", "jp_gap", "relevance"],
+            "additionalProperties": false
+          },
+          "reason": {"type": "string"},
+          "try_plan": {"type": "string"},
+          "article_angle": {"type": "string"}
+        },
+        "required": ["id", "category", "score", "signals", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["items"],
+  "additionalProperties": false
+}
