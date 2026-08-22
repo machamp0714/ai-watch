@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
+import pytest
 
 from ai_watch.claude_runner import ClaudeResult
 from ai_watch.config import Settings, SourceConfig
@@ -116,3 +117,31 @@ def test_sync_decisions_runs_before_triage(tmp_path):
     assert r.decisions_added == 1
     assert "^aw-00000001" in v.backlog.read_text()
     assert json.loads((s.data_dir / "decisions.jsonl").read_text().splitlines()[0])["decision"] == "try"
+
+
+def test_rerun_from_stage_without_work_files_raises_and_keeps_digest(tmp_path):
+    s = _settings(tmp_path)
+    v = Vault(s.vault_dir)
+    v.write_atomic(v.digest_path(DAY), "KEEP")
+    with pytest.raises(FileNotFoundError):
+        run_nightly(s, DAY, from_stage="render", now=NOW, runner=FakeRunner(), http=None, notifier=lambda t, m: None)
+    assert v.read_digest(DAY) == "KEEP"
+    assert "FAILED" in v.log.read_text()
+
+
+def test_render_failure_notifies_and_logs(tmp_path, monkeypatch):
+    s = _settings(tmp_path)
+    v = Vault(s.vault_dir)
+    v.write_atomic(v.backlog, "# Backlog\n\n## 候補\n")
+    v.write_atomic(v.profile, "興味: Claude Code")
+    notes = []
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr("ai_watch.pipeline.render_digest", _boom)
+    with pytest.raises(RuntimeError):
+        run_nightly(s, DAY, now=NOW, runner=FakeRunner(), http=_http(), notifier=lambda t, m: notes.append(m))
+    assert notes == ["2026-08-23: FAILED RuntimeError: boom"]
+    assert v.read_digest(DAY) is None
+    assert "FAILED: RuntimeError: boom" in v.log.read_text().rstrip().splitlines()[-1]
