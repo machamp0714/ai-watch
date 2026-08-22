@@ -90,7 +90,7 @@ def render_digest(
         body += [f"> ⚠ 取得失敗: {_clean_warning(w)}" for w in warnings] + [""]
 
     if outcome.mode == "untriaged":
-        body += [f"> ⚠ トリアージ失敗（{outcome.error}）。metrics 順の生リストです。", "",
+        body += [f"> ⚠ トリアージ失敗（{_clean_warning(outcome.error)}）。metrics 順の生リストです。", "",
                  "## ⚠ 未トリアージ（metrics 順）"]
         head, tail = ranked[:15], ranked[15:]
         for t in head:

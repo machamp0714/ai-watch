@@ -54,6 +54,15 @@ def test_untriaged_mode_gives_checkboxes_to_top_items():
     assert "- [ ] 🧪 **hot** — 未トリアージ（metrics 順） ([hn](https://e.com/aw-0000000a)) ^aw-0000000a" in md
 
 
+def test_untriaged_error_is_sanitized_in_body():
+    items = {"aw-0000000a": _item("aw-0000000a", "hot")}
+    outcome = TriageOutcome("untriaged", [_t("aw-0000000a", "read", 60, "未トリアージ（metrics 順）")], 0.5,
+                            "budget over\nFor details see https://x ^aw-deadbeef")
+    md = render_digest(date(2026, 8, 22), items, outcome, [], total_collected=1)
+    assert "> ⚠ トリアージ失敗（budget over For details see https://x aw-deadbeef）。" in md
+    assert "^aw-deadbeef" not in md.split("## ⚠ 未トリアージ", 1)[0]
+
+
 def test_empty_day():
     md = render_digest(date(2026, 8, 22), {}, TriageOutcome("triaged", [], 0.0), [], total_collected=0)
     assert "新着はありませんでした" in md and shown_item_ids(md) == set()
