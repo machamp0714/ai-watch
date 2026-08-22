@@ -31,7 +31,8 @@ def _src(it: Item) -> str:
 
 
 def _link(it: Item) -> str:
-    return f"([{_src(it)}]({it.url}))"
+    url = it.url.replace("(", "%28").replace(")", "%29")
+    return f"([{_src(it)}]({url}))"
 
 
 def _one_line(s: str) -> str:

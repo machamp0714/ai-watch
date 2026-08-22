@@ -79,3 +79,56 @@ def test_sync_decisions_end_to_end(tmp_path):
     assert {(d.id, d.decision) for d in added} == {("aw-7f3a9c00", "try"), ("aw-aaaaaaaa", "try"), ("aw-0000c0de", "share"), ("aw-1b2c3d00", "skip_implicit")}
     assert "^aw-7f3a9c00" in v.backlog.read_text() and "^aw-0000c0de" in v.outputs.read_text()
     assert sync_decisions(v, store, date(2026, 8, 23)) == []               # 2 回目は何も増えない
+
+
+def test_parse_digest_handles_encoded_parentheses():
+    digest_with_encoded = """---
+type: record
+---
+# AI Watch 2026-08-20
+
+## 🧪 試す候補
+- [x] 🧪 **Rust** — reason ([wiki](https://en.wikipedia.org/wiki/Rust_%28programming_language%29)) ^aw-12345678
+"""
+    decs = parse_digest(digest_with_encoded, date(2026, 8, 20), date(2026, 8, 23))
+    assert len(decs) == 1
+    assert decs[0].id == "aw-12345678"
+    assert decs[0].url == "https://en.wikipedia.org/wiki/Rust_%28programming_language%29"
+
+
+def test_sync_decisions_does_not_record_when_vault_write_fails(tmp_path, monkeypatch):
+    import pytest
+    digest_with_one_item = """---
+type: record
+---
+# AI Watch 2026-08-20
+
+## 🧪 試す候補
+- [x] 🧪 **Test** — reason ([link](https://e.com/1)) ^aw-87654321
+"""
+    v = Vault(tmp_path / "vault")
+    v.write_atomic(v.digest_path(date(2026, 8, 20)), digest_with_one_item)
+    v.write_atomic(v.backlog, "# Backlog\n\n## 候補\n")
+    store = DecisionStore(tmp_path / "decisions.jsonl")
+
+    # Make Vault.insert_under_heading raise OSError on first call
+    original_insert = Vault.insert_under_heading
+    call_count = [0]
+    def failing_insert(self, *args, **kwargs):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise OSError("backlog write failed")
+        return original_insert(self, *args, **kwargs)
+
+    monkeypatch.setattr(Vault, "insert_under_heading", failing_insert)
+
+    # sync_decisions should fail without recording
+    with pytest.raises(OSError):
+        sync_decisions(v, store, date(2026, 8, 23))
+    assert store.load() == []
+
+    # After restoring, retry should succeed
+    monkeypatch.setattr(Vault, "insert_under_heading", original_insert)
+    added = sync_decisions(v, store, date(2026, 8, 23))
+    assert len(added) == 1
+    assert "^aw-87654321" in v.backlog.read_text()

@@ -41,7 +41,8 @@ class DecisionStore:
             return []
         return [Decision.from_dict(json.loads(l)) for l in self.path.read_text(encoding="utf-8").splitlines() if l.strip()]
 
-    def append_unique(self, decisions: list[Decision]) -> list[Decision]:
+    def filter_new(self, decisions: list[Decision]) -> list[Decision]:
+        """決定の中で新規（まだ記録されていない）ものをフィルタする。書き込みは行わない。"""
         existing = self.load()
         keys = {(d.id, d.decision) for d in existing}
         positive = {d.id for d in existing if d.decision in ("try", "share")}
@@ -54,11 +55,19 @@ class DecisionStore:
                 continue
             keys.add((d.id, d.decision))
             added.append(d)
-        if added:
+        return added
+
+    def append(self, decisions: list[Decision]) -> None:
+        """決定を記録に追加する（新規チェックなし）。"""
+        if decisions:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             with self.path.open("a", encoding="utf-8") as f:
-                for d in added:
+                for d in decisions:
                     f.write(json.dumps(d.to_dict(), ensure_ascii=False) + "\n")
+
+    def append_unique(self, decisions: list[Decision]) -> list[Decision]:
+        added = self.filter_new(decisions)
+        self.append(added)
         return added
 
     def recent(self, n: int = 30) -> list[Decision]:
@@ -86,7 +95,8 @@ def sync_decisions(vault: Vault, store: DecisionStore, today: date, *, apply: bo
     found: list[Decision] = []
     for digest_date, md in vault.recent_digests(today, days=days):
         found.extend(parse_digest(md, digest_date, today))
-    added = store.append_unique(found)
+    added = store.filter_new(found)
     if apply:
         apply_decisions(added, vault)
+    store.append(added)
     return added

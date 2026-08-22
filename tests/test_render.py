@@ -90,3 +90,13 @@ def test_empty_title_gets_placeholder():
     outcome = TriageOutcome("triaged", [_t("aw-00000001", "try", 95)], 0.0)
     md = render_digest(date(2026, 8, 22), items, outcome, [], total_collected=1)
     assert "- [ ] 🧪 **(no title)** — 理由" in md
+
+
+def test_link_percent_encodes_parentheses():
+    items = {"aw-00000001": Item(id="aw-00000001", url="https://en.wikipedia.org/wiki/Rust_(programming_language)", title="Rust",
+                                  excerpt="", published_at=datetime(2026, 8, 21, tzinfo=timezone.utc), metrics={}, lang="en",
+                                  group="en", source="hn", mentions=["hn"])}
+    outcome = TriageOutcome("triaged", [_t("aw-00000001", "try", 95)], 0.0)
+    md = render_digest(date(2026, 8, 22), items, outcome, [], total_collected=1)
+    assert "(https://en.wikipedia.org/wiki/Rust_%28programming_language%29)" in md
+    assert shown_item_ids(md) == {"aw-00000001"}
