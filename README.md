@@ -40,4 +40,4 @@ tail -f logs/nightly.err.log
 - `data/work/YYYY-MM-DD/*.json` — 段ごとの中間出力（`--from` 再実行用）
 - `data/seen.sqlite` — 機械の既読
 - `data/decisions.jsonl` — 朝のチェック（try / share / skip_implicit）
-- vault `02_Knowledge/ai-watch/` — digests / backlog / outputs / log / profile
+- vault `00_Self/ai-watch/` — digests / backlog / outputs / log / profile

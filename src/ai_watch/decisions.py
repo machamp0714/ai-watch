@@ -8,7 +8,7 @@ from pathlib import Path
 from .models import Decision
 from .vault import Vault
 
-# render.py が出す行の契約: "- [ ] 🧪 **title** — reason ([src](url)) ^aw-xxxxxxxx"
+# render.py が出す行の契約: "- [ ] 🧪 **title** — reason ([src](url)) ^aw-xxxxxxxx" / "- [ ] 📣 **title** ([src](url)) ^aw-xxxxxxxx"
 LINE_RE = re.compile(
     r"^\s*- \[(?P<mark>[ xX])\] (?P<emoji>🧪|📣) \*\*(?P<title>.+?)\*\*(?P<rest>.*?)\^(?P<id>aw-[0-9a-f]{8})\s*$",
     re.M,

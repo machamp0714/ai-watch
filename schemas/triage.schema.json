@@ -22,7 +22,8 @@
           },
           "reason": {"type": "string"},
           "try_plan": {"type": "string"},
-          "article_angle": {"type": "string"}
+          "article_angle": {"type": "string"},
+          "summary": {"type": "string"}
         },
         "required": ["id", "category", "score", "signals", "reason"],
         "additionalProperties": false

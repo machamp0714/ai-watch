@@ -21,6 +21,7 @@ def _t(i, cat, score, reason="理由", try_plan="", angle=""):
 def test_sections_limits_and_line_format():
     items = {f"aw-{n:08d}": _item(f"aw-{n:08d}", f"Title {n}") for n in range(1, 12)}
     items["aw-00000001"] = _item("aw-00000001", "Try *one* [x]", mentions=("hn", "x"))
+    items["aw-00000007"] = _item("aw-00000007", "Read | pipe")
     triaged = [
         _t("aw-00000001", "try", 95, "一番", "1. A\n2. B", "切り口 A"),
         _t("aw-00000002", "try", 90), _t("aw-00000003", "try", 85), _t("aw-00000004", "try", 80),   # 4 件目は溢れ
@@ -28,6 +29,8 @@ def test_sections_limits_and_line_format():
         _t("aw-00000007", "read", 50), _t("aw-00000008", "read", 40), _t("aw-00000009", "read", 30), _t("aw-00000010", "read", 20),
         _t("aw-00000011", "noise", 0),
     ]
+    triaged[4].summary = "- `--flag` を追加\n- 旧 API を廃止\n"
+    triaged[6].summary = "要点 A。\n要点 | B"
     md = render_digest(date(2026, 8, 22), items, TriageOutcome("triaged", triaged, 0.12), ["reddit: 403"], total_collected=184)
 
     assert md.startswith("---\ntype: record\ndate: 2026-08-22\nmode: triaged\n")
@@ -35,15 +38,25 @@ def test_sections_limits_and_line_format():
     assert "> ⚠ 取得失敗: reddit: 403" in md
     assert "- [ ] 🧪 **Try one x** — 一番 ([hn +1](https://e.com/aw-00000001)) ^aw-00000001" in md
     assert "  - 試し方: 1. A / 2. B" in md and "  - 記事の切り口: 切り口 A" in md
-    assert "- [ ] 📣 **Title 5** — 理由 ([hn](https://e.com/aw-00000005)) ^aw-00000005" in md
-    assert "- 📖 **Title 7** — 理由 ([hn](https://e.com/aw-00000007)) ^aw-00000007" in md
-    assert "^aw-00000004" not in md and "^aw-00000010" not in md           # 溢れはブロック ID 無し
-    assert "- try 80 **Title 4** ([hn](https://e.com/aw-00000004))" in md
+    # update: 1 行目は checkbox 契約、summary は箇条書きで下に
+    assert "- [ ] 📣 **Title 5** ([hn](https://e.com/aw-00000005)) ^aw-00000005\n  - `--flag` を追加\n  - 旧 API を廃止\n" in md
+    assert "- [ ] 📣 **Title 6** ([hn](https://e.com/aw-00000006)) ^aw-00000006\n  - 理由\n" in md   # summary 無しは reason
+    # read / 注目: 記事・ソース・要約のテーブル。| はエスケープ、ID は %% コメントで隠す
+    assert "## 📖 読む\n\n| 記事 | ソース | 要約 |\n|---|---|---|\n" in md
+    assert "| **Read \\| pipe** | [hn](https://e.com/aw-00000007) | 要点 A。 要点 \\| B %%^aw-00000007%% |" in md
+    assert "| **Title 8** | [hn](https://e.com/aw-00000008) | 理由 %%^aw-00000008%% |" in md
+    assert "## 👀 注目（2 件）\n\n| 記事 | ソース | 要約 |\n|---|---|---|\n" in md
+    assert "| **Title 4** | [hn](https://e.com/aw-00000004) | 理由 %%^aw-00000004%% |\n| **Title 10** |" in md   # score 順
+    assert "その他の候補" not in md and "<details>" not in md
     assert "Title 11" not in md                                              # noise は出さない
-    assert "<details><summary>その他の候補 (2 件)</summary>" in md
-    assert shown_item_ids(md) == {"aw-00000001", "aw-00000002", "aw-00000003", "aw-00000005", "aw-00000006",
-                                  "aw-00000007", "aw-00000008", "aw-00000009"}
-    assert "items_shown: 8" in md
+    assert shown_item_ids(md) == {f"aw-{n:08d}" for n in range(1, 11)}
+    assert "items_shown: 10" in md
+
+
+def test_read_section_empty_shows_placeholder():
+    items = {"aw-00000001": _item("aw-00000001", "t")}
+    md = render_digest(date(2026, 8, 22), items, TriageOutcome("triaged", [_t("aw-00000001", "try", 95)], 0.0), [], total_collected=1)
+    assert "## 📖 読む\n\n（なし）\n" in md and "## 👀 注目" not in md
 
 
 def test_untriaged_mode_gives_checkboxes_to_top_items():

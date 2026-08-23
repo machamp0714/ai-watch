@@ -8,7 +8,7 @@ from typing import Any
 import yaml
 
 DEFAULT_VAULT_DIR = (
-    "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/02_Knowledge/ai-watch"
+    "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/00_Self/ai-watch"
 )
 
 

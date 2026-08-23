@@ -9,6 +9,8 @@ from .triage import TriageOutcome
 
 _BLOCK_ID = re.compile(r"\^(aw-[0-9a-f]{8})\b")
 
+TABLE_HEADER = ["| 記事 | ソース | 要約 |", "|---|---|---|"]
+
 
 @dataclass(frozen=True)
 class Limits:
@@ -30,13 +32,27 @@ def _src(it: Item) -> str:
     return f"{it.source} +{extra}" if extra > 0 else it.source
 
 
+def _url(it: Item) -> str:
+    return it.url.replace("(", "%28").replace(")", "%29")
+
+
 def _link(it: Item) -> str:
-    url = it.url.replace("(", "%28").replace(")", "%29")
-    return f"([{_src(it)}]({url}))"
+    return f"([{_src(it)}]({_url(it)}))"
 
 
 def _one_line(s: str) -> str:
     return " / ".join(line.strip() for line in (s or "").splitlines() if line.strip())
+
+
+def _summary_lines(t: TriagedItem) -> list[str]:
+    """summary を行ごとに（先頭の箇条書き記号は落とす）。無ければ reason で代用。"""
+    lines = [_clean(re.sub(r"^\s*[-*・]\s*", "", line)) for line in (t.summary or "").splitlines()]
+    lines = [line for line in lines if line]
+    return lines or ([_clean(t.reason)] if _clean(t.reason) else [])
+
+
+def _cell(s: str) -> str:
+    return _clean(s).replace("|", "\\|")
 
 
 def _try_lines(it: Item, t: TriagedItem) -> list[str]:
@@ -49,19 +65,22 @@ def _try_lines(it: Item, t: TriagedItem) -> list[str]:
     return lines
 
 
-def _update_line(it: Item, t: TriagedItem) -> str:
+def _update_lines(it: Item, t: TriagedItem) -> list[str]:
     title = _clean(it.title) or "(no title)"
-    return f"- [ ] 📣 **{title}** — {_clean(t.reason)} {_link(it)} ^{it.id}"
+    return [f"- [ ] 📣 **{title}** {_link(it)} ^{it.id}"] + [f"  - {line}" for line in _summary_lines(t)]
 
 
-def _read_line(it: Item, t: TriagedItem) -> str:
-    title = _clean(it.title) or "(no title)"
-    return f"- 📖 **{title}** — {_clean(t.reason)} {_link(it)} ^{it.id}"
+def _table_row(it: Item, t: TriagedItem) -> str:
+    """記事 / ソース / 要約 の 1 行。ブロック ID は Obsidian コメント（%% %%）で隠して回収用に残す。"""
+    title = _cell(it.title) or "(no title)"
+    summary = _cell(" ".join(_summary_lines(t)))
+    return f"| **{title}** | [{_src(it)}]({_url(it)}) | {summary} %%^{it.id}%% |"
 
 
-def _overflow_line(it: Item, t: TriagedItem) -> str:
-    title = _clean(it.title) or "(no title)"
-    return f"- {t.category} {t.score} **{title}** {_link(it)}"
+def _table(rows: list[tuple[Item, TriagedItem]]) -> list[str]:
+    if not rows:
+        return ["（なし）"]
+    return TABLE_HEADER + [_table_row(it, t) for it, t in rows]
 
 
 def shown_item_ids(md: str) -> set[str]:
@@ -101,7 +120,8 @@ def render_digest(
         for t in ranked:
             if t.category in by_cat:
                 by_cat[t.category].append(t)
-        overflow = by_cat["try"][limits.try_:] + by_cat["update"][limits.update:] + by_cat["read"][limits.read:]
+        overflow = sorted(by_cat["try"][limits.try_:] + by_cat["update"][limits.update:] + by_cat["read"][limits.read:],
+                          key=lambda t: t.score, reverse=True)
 
         if not any(by_cat.values()):
             body += ["新着はありませんでした。", ""]
@@ -109,14 +129,14 @@ def render_digest(
         for t in by_cat["try"][:limits.try_]:
             body += _try_lines(items[t.id], t)
         body += ["", "## 📣 公式アップデート（[x] で X 投稿待ちへ）"]
-        body += [_update_line(items[t.id], t) for t in by_cat["update"][:limits.update]]
-        body += ["", "## 📖 読む"]
-        body += [_read_line(items[t.id], t) for t in by_cat["read"][:limits.read]]
+        for t in by_cat["update"][:limits.update]:
+            body += _update_lines(items[t.id], t)
+        body += ["", "## 📖 読む", ""]
+        body += _table([(items[t.id], t) for t in by_cat["read"][:limits.read]])
 
     if overflow:
-        body += ["", f"<details><summary>その他の候補 ({len(overflow)} 件)</summary>", ""]
-        body += [_overflow_line(items[t.id], t) for t in overflow]
-        body += ["", "</details>"]
+        body += ["", f"## 👀 注目（{len(overflow)} 件）", ""]
+        body += _table([(items[t.id], t) for t in overflow])
 
     text = "\n".join(body).rstrip() + "\n"
     shown = len(shown_item_ids(text))

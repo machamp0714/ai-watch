@@ -67,6 +67,7 @@ class TriagedItem:
     reason: str
     try_plan: str = ""
     article_angle: str = ""
+    summary: str = ""
     x_draft: str = ""
 
     def to_dict(self) -> dict[str, Any]:

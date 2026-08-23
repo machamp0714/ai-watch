@@ -37,6 +37,10 @@ def item_id(url: str) -> str:
 _WORD = re.compile(r"[0-9]+|[A-Za-z぀-ヿ一-鿿]{2,}")
 
 
+# Item に保持する excerpt の上限。公式ソースの要約に使うので adapter 側（github_sections 等）の上限以上にする
+EXCERPT_MAX = 2000
+
+
 def _title_tokens(title: str) -> set[str]:
     # " - Zenn" のようなサイト名サフィックスを落としてから分かち書き（雑で良い：2 文字以上の連続）
     t = re.split(r"\s+[-|–—]\s+", title)[0].lower()
@@ -55,7 +59,7 @@ def _merge(into: Item, r: RawItem) -> None:
     for k, v in r.metrics.items():
         into.metrics[k] = max(into.metrics.get(k, 0), v)
     if len(r.excerpt) > len(into.excerpt):
-        into.excerpt = r.excerpt[:600]
+        into.excerpt = r.excerpt[:EXCERPT_MAX]
     if into.published_at is None:
         into.published_at = r.published_at
 
@@ -70,7 +74,7 @@ def normalize(raws: list[RawItem], groups: dict[str, str]) -> list[Item]:
             _merge(by_id[iid], r)
             continue
         by_id[iid] = Item(
-            id=iid, url=cu, title=r.title.strip(), excerpt=r.excerpt[:600],
+            id=iid, url=cu, title=r.title.strip(), excerpt=r.excerpt[:EXCERPT_MAX],
             published_at=r.published_at, metrics=dict(r.metrics), lang=r.lang,
             group=groups.get(r.source, "misc"), source=r.source, mentions=[r.source],
         )

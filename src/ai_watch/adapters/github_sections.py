@@ -37,6 +37,6 @@ class GithubFileSectionsAdapter:
             version = m.group(1)
             out.append(RawItem(
                 source=cfg.id, url=f"{page_url}#{_slug(version)}", title=f"{prefix}{version}".strip(),
-                excerpt=excerpt(body, 800), published_at=None, lang="en",
+                excerpt=excerpt(body, 2000), published_at=None, lang="en",
             ))
         return out

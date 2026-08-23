@@ -1,5 +1,5 @@
 defaults:
-  vault_dir: "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/02_Knowledge/ai-watch"
+  vault_dir: "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/00_Self/ai-watch"
   data_dir: ./data
   window_hours: 30
   user_agent: "ai-watch/0.1 (personal reader; github.com/machamp0714)"

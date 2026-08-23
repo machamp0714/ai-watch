@@ -19,7 +19,7 @@ class GithubReleasesAdapter:
             name = r.get("name") or r.get("tag_name") or ""
             out.append(RawItem(
                 source=cfg.id, url=r["html_url"], title=f"{prefix}{name}".strip(),
-                excerpt=excerpt(r.get("body") or "", 800), published_at=parse_iso(r.get("published_at")),
+                excerpt=excerpt(r.get("body") or "", 2000), published_at=parse_iso(r.get("published_at")),
                 lang="en",
             ))
         return out

@@ -50,7 +50,7 @@ def test_triage_success_marks_missing_as_noise_and_clamps(tmp_path):
     items = [_item("aw-1", "A"), _item("aw-2", "B"), _item("aw-3", "C")]
     data = {"items": [
         {"id": "aw-1", "category": "try", "score": 90, "signals": {"attention": 3, "tryability": 3, "jp_gap": 2, "relevance": 3},
-         "reason": "r", "try_plan": "p", "article_angle": "a"},
+         "reason": "r", "try_plan": "p", "article_angle": "a", "summary": "s1\ns2"},
         {"id": "aw-2", "category": "read", "score": 140, "signals": {"attention": 1, "tryability": 0, "jp_gap": 1, "relevance": 2}, "reason": "r2"},
         {"id": "aw-unknown", "category": "try", "score": 50, "signals": {"attention": 0, "tryability": 0, "jp_gap": 0, "relevance": 0}, "reason": "ghost"},
     ]}
@@ -59,7 +59,7 @@ def test_triage_success_marks_missing_as_noise_and_clamps(tmp_path):
     assert out.mode == "triaged" and out.cost_usd == 0.12
     by_id = {t.id: t for t in out.triaged}
     assert set(by_id) == {"aw-1", "aw-2", "aw-3"}                       # 未知 id は捨て、欠けた id は noise
-    assert by_id["aw-1"].category == "try" and by_id["aw-1"].try_plan == "p"
+    assert by_id["aw-1"].category == "try" and by_id["aw-1"].try_plan == "p" and by_id["aw-1"].summary == "s1\ns2"
     assert by_id["aw-2"].score == 100                                    # clamp
     assert by_id["aw-3"].category == "noise"
     assert runner.calls[0][2]["budget_usd"] == 2.0
@@ -134,3 +134,34 @@ def test_parse_triage_without_groups_does_not_downgrade():
 def test_fallback_rank_handles_negative_metrics_and_no_mentions():
     result = fallback_rank([_item("aw-1", "t", {"points": -5}, ())])
     assert result[0].score == 0 and 0 <= result[0].score <= 100
+
+
+def test_build_prompt_keeps_longer_excerpt_for_official():
+    from datetime import datetime, timezone
+    from ai_watch.models import Item
+    from ai_watch.triage import build_prompt
+    import json
+    it = Item(id="aw-1", url="https://e.com/1", title="t", excerpt="x" * 2500, published_at=datetime(2026, 8, 21, tzinfo=timezone.utc),
+              metrics={}, lang="en", group="official", source="codex-releases", mentions=["codex-releases"])
+    prompt = build_prompt("{{ITEMS}}", [it], "", [], date(2026, 8, 22))
+    assert len(json.loads(prompt)[0]["excerpt"]) == 2000
+
+
+def test_promote_official_turns_noise_release_into_update():
+    from datetime import datetime, timezone
+    from ai_watch.models import Item
+    from ai_watch.models import TriagedItem
+    from ai_watch.triage import promote_official
+    def it(i, source, excerpt):
+        return Item(id=i, url=f"https://e.com/{i}", title=i, excerpt=excerpt, published_at=datetime(2026, 8, 21, tzinfo=timezone.utc),
+                    metrics={}, lang="en", group="official", source=source, mentions=[source])
+    items = [it("aw-1", "claude-code-changelog", "- Bug fixes and reliability improvements"),
+             it("aw-2", "codex-releases", ""), it("aw-3", "openai-news", "x")]
+    sig = {"attention": 0, "tryability": 0, "jp_gap": 0, "relevance": 0}
+    triaged = [TriagedItem("aw-1", "noise", 0, sig, ""), TriagedItem("aw-2", "noise", 0, sig, ""),
+               TriagedItem("aw-3", "noise", 0, sig, "")]
+    out = {t.id: t for t in promote_official(triaged, items)}
+    assert out["aw-1"].category == "update" and out["aw-1"].score == 10
+    assert out["aw-1"].summary == "Bug fixes and reliability improvements"
+    assert out["aw-2"].category == "update" and out["aw-2"].summary == "（本文なし）"
+    assert out["aw-3"].category == "noise"                                    # 対象外ソースは触らない

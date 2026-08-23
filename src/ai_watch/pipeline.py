@@ -15,7 +15,7 @@ from .decisions import DecisionStore, apply_decisions, parse_digest, sync_decisi
 from .models import Item, raw_from_dict, raw_to_dict
 from .normalize import normalize
 from .notify import log_line, notify
-from .render import render_digest, shown_item_ids
+from .render import Limits, render_digest, shown_item_ids
 from .seen import SeenStore
 from .triage import TriageOutcome, triage
 from .vault import Vault
@@ -165,8 +165,9 @@ def run_nightly(
         digest_path = (work.dir / "digest.md") if dry_run else vault.digest_path(day)
         Vault.write_atomic(digest_path, md)
 
+        # 注目テーブルに溢れた try も shown に入るので、チェックボックス付きの上位だけを数える
         try_ids = [t.id for t in sorted(outcome.triaged, key=lambda t: t.score, reverse=True)
-                   if t.category == "try" and t.id in shown]
+                   if t.category == "try" and t.id in shown][:Limits().try_]
         report = NightlyReport(
             day=day.isoformat(), collected=len(all_items), new=len(new_items), shown=len(shown), mode=outcome.mode,
             warnings=warnings, cost_usd=outcome.cost_usd, digest_path=str(digest_path),

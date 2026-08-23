@@ -11,6 +11,12 @@ from .models import Decision, Item, TriagedItem
 
 Mode = Literal["triaged", "untriaged"]
 
+# 読者が常に見たい公式リリース。LLM が noise に落としても update に昇格する
+ALWAYS_UPDATE_SOURCES = {"claude-code-changelog", "codex-releases"}
+
+# プロンプトに載せる excerpt の上限。公式（changelog / release notes）は要約の材料なので長めに渡す
+_EXCERPT_CHARS = {"official": 2000}
+
 
 @dataclass
 class TriageOutcome:
@@ -32,7 +38,7 @@ class TriageOutcome:
 def _items_payload(items: list[Item]) -> list[dict[str, Any]]:
     return [{
         "id": it.id, "source": it.source, "group": it.group, "mentions": it.mentions,
-        "title": it.title, "excerpt": it.excerpt[:600], "metrics": it.metrics,
+        "title": it.title, "excerpt": it.excerpt[:_EXCERPT_CHARS.get(it.group, 600)], "metrics": it.metrics,
         "published_at": it.published_at.isoformat() if it.published_at else None, "lang": it.lang,
     } for it in items]
 
@@ -84,12 +90,27 @@ def parse_triage(data: dict[str, Any], known_ids: list[str], groups: dict[str, s
             signals={k: _clamp(signals.get(k), 0, 3) for k in ("attention", "tryability", "jp_gap", "relevance")},
             reason=str(row.get("reason") or ""), try_plan=str(row.get("try_plan") or ""),
             article_angle=str(row.get("article_angle") or ""),
+            summary=str(row.get("summary") or ""),
         )
     for iid in known_ids:
         if iid not in out:
             out[iid] = TriagedItem(id=iid, category="noise", score=0,
                                    signals={"attention": 0, "tryability": 0, "jp_gap": 0, "relevance": 0}, reason="")
     return list(out.values())
+
+
+def promote_official(triaged: list[TriagedItem], items: list[Item]) -> list[TriagedItem]:
+    """ALWAYS_UPDATE_SOURCES のアイテムが noise なら update（score 10）に昇格し、summary を excerpt の 1 行目で埋める。"""
+    by_id = {it.id: it for it in items}
+    out = []
+    for t in triaged:
+        it = by_id.get(t.id)
+        if t.category == "noise" and it is not None and it.source in ALWAYS_UPDATE_SOURCES:
+            first = next((l.strip(" -*") for l in it.excerpt.splitlines() if l.strip()), "")
+            t = TriagedItem(id=t.id, category="update", score=10, signals=t.signals,
+                            reason="公式リリース（自動昇格）", summary=first[:120] or "（本文なし）")
+        out.append(t)
+    return out
 
 
 def fallback_rank(items: list[Item]) -> list[TriagedItem]:
@@ -116,4 +137,5 @@ def triage(
     if not res.ok:
         return TriageOutcome("untriaged", fallback_rank(items), res.cost_usd, res.error)
     groups = {it.id: it.group for it in items}
-    return TriageOutcome("triaged", parse_triage(res.data, [it.id for it in items], groups=groups), res.cost_usd)
+    triaged = promote_official(parse_triage(res.data, [it.id for it in items], groups=groups), items)
+    return TriageOutcome("triaged", triaged, res.cost_usd)
