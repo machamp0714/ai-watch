@@ -1,6 +1,6 @@
 # ai-watch
 
-LLM 周辺（Claude Code / Codex の更新、注目記事）を夜間に収集・トリアージし、Obsidian vault に朝のダイジェストを生成する個人ツール。設計は `docs/superpowers/specs/2026-08-22-ai-watch-design.md`。
+LLM 周辺（Claude Code / Codex の更新、注目記事）を夜間に収集・トリアージし、Obsidian vault に朝のダイジェストを生成する個人ツール。
 
 ## セットアップ
 
@@ -9,8 +9,6 @@ uv sync
 uv run ai-watch init-vault          # vault に profile.md 等を作る（既存は触らない）
 uv run ai-watch doctor              # claude / npx / vault / MCP 設定の事前チェック
 ```
-
-X を取る場合は最初に一度だけ headed でログインする（`docs/superpowers/plans/2026-08-22-ai-watch-v1.md` Task 0）。
 
 ## 手動実行
 
