@@ -57,6 +57,7 @@ def test_read_section_empty_shows_placeholder():
     items = {"aw-00000001": _item("aw-00000001", "t")}
     md = render_digest(date(2026, 8, 22), items, TriageOutcome("triaged", [_t("aw-00000001", "try", 95)], 0.0), [], total_collected=1)
     assert "## 📖 読む\n\n（なし）\n" in md and "## 👀 注目" not in md
+    assert "## 📣 公式アップデート（[x] で X 投稿待ちへ）\n（なし。新しい公式リリースはありませんでした）\n" in md
 
 
 def test_untriaged_mode_gives_checkboxes_to_top_items():

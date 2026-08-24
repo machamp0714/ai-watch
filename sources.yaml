@@ -102,6 +102,12 @@ sources:
     url: https://b.hatena.ne.jp/hotentry/it.rss
     lang: ja
     keywords: [claude, codex, llm, openai, anthropic, gpt, gemini, エージェント, 生成AI]
+  - id: hatena-speakerdeck
+    type: rss
+    group: jp
+    url: https://b.hatena.ne.jp/site/speakerdeck.com/?mode=rss   # 新しくブクマされた Speaker Deck のスライド
+    lang: ja
+    keywords: [claude, codex, llm, openai, anthropic, gpt, gemini, エージェント, agent, 生成ai, ai駆動, mcp]
   - id: note
     type: note_search
     group: jp

@@ -129,8 +129,12 @@ def render_digest(
         for t in by_cat["try"][:limits.try_]:
             body += _try_lines(items[t.id], t)
         body += ["", "## 📣 公式アップデート（[x] で X 投稿待ちへ）"]
-        for t in by_cat["update"][:limits.update]:
-            body += _update_lines(items[t.id], t)
+        updates = by_cat["update"][:limits.update]
+        if updates:
+            for t in updates:
+                body += _update_lines(items[t.id], t)
+        else:
+            body += ["（なし。新しい公式リリースはありませんでした）"]
         body += ["", "## 📖 読む", ""]
         body += _table([(items[t.id], t) for t in by_cat["read"][:limits.read]])
 

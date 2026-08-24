@@ -24,6 +24,7 @@ score = 0〜100 の総合。try 候補は上位 3 件がダイジェストに出
 - reason は日本語 1 行（60 字以内）。summary も含め、書いてある事実だけを根拠にし、推測で断定しない
 - summary は noise 以外の全アイテムに必ず書く（テーブルの「要約」列に出る）
 - 同じ話題が複数アイテムにある場合、最も一次情報に近いものを上位にし、他は read か noise
+- Speaker Deck のスライド（source が hatena-speakerdeck、または url が speakerdeck.com）は excerpt がほぼ無い。タイトルがプロファイルの興味領域（コーディングエージェント・LLM エージェント設計・評価など）に合えば read（score 40〜60）にし、summary は「〜についての登壇スライド」のようにタイトルから分かる範囲で書く。興味領域外なら noise でよい
 - source が claude-code-changelog / codex-releases のアイテム（Claude Code / Codex のリリース）は内容が薄くても必ず update にする（noise にしない）。本文が「Bug fixes」だけ・alpha 版などは score を低く（10〜30）し、summary は 1 項目でよい
 - 読者が skip_implicit したものと似た傾向のアイテムはスコアを下げる。try したものと似た傾向は上げる
 - 出力は JSON Schema に従った JSON のみ
