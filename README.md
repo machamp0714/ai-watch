@@ -84,11 +84,19 @@ uv run ai-watch init-vault          # vault に profile.md 等を作る（既存
 uv run ai-watch doctor              # claude / npx / vault / MCP 設定の事前チェック
 ```
 
+R2同期にはPython依存とは別にAWS CLI v2が必要である。
+条件付き更新に使うオプションが利用できることを確認する。
+
+```bash
+aws --version
+aws s3api put-object help | rg -n -- '--if-match|--if-none-match'
+```
+
 ## 監視リスト
 
 利用中ツールの公式更新をコード変更なしで追加または停止する場合は、リポジトリ外の監視リストを明示的に指定する。
 個人設定の正本は非公開R2の`config/watchlist.yaml`とし、公開リポジトリには空の[`config/watchlist.example.yaml`](config/watchlist.example.yaml)だけを置く。
-R2からの取得、初回登録、競合を検出する更新処理はIssue #2の範囲であり、現時点ではローカルへ取得した作業コピーを使う。
+R2から取得した作業コピーを読み、初回登録と競合を検出する更新には後述の`ai-watch-r2`を使う。
 
 ```bash
 uv run ai-watch watchlist
@@ -131,6 +139,52 @@ tools:
 `nightly --from triage`は保存済みの収集結果を保ったまま新しい関心設定で再選別し、`nightly --from render`は保存済みの選別結果を使うため再選別しない。
 設定変更は過去の生データ、評価、投稿状態、既出履歴を削除しない。
 自動追加UI、チャットからの設定変更、R2同期はこの管理機能には含まれない。
+
+## 非公開R2との同期
+
+`ai-watch-r2`は非公開R2から設定と永続データを取得し、実行成果物をcopy-onlyで保存する独立CLIである。
+実行には次の環境変数が必要になる。
+
+```text
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+CLOUDFLARE_ACCOUNT_ID
+R2_BUCKET_NAME
+```
+
+値はコマンド引数、リポジトリ内の`.env`、公開ログへ書かない。
+同期CLIはR2用の資格情報をAWS CLIの子プロセス環境へだけ渡し、AWS CLIの標準エラーもそのまま表示しない。
+
+通常実行は、最初にruntimeへpullし、その配下を3つの既存環境変数で指定してからnightlyを実行する。
+pullが失敗した場合は設定なしや公開サンプルへフォールバックせず、nightlyを開始しない。
+
+```bash
+uv run ai-watch-r2 pull --root /path/to/runtime
+AI_WATCH_VAULT_DIR=/path/to/runtime/vault \
+AI_WATCH_DATA_DIR=/path/to/runtime/data \
+AI_WATCH_WATCHLIST_FILE=/path/to/runtime/config/watchlist.yaml \
+  uv run ai-watch nightly
+uv run ai-watch-r2 push-results --root /path/to/runtime
+```
+
+`vault/`は全体を同期する。
+`data/`は`seen.sqlite`、`decisions.jsonl`、`work/`だけを同期し、`raw/`と`playwright-profile/`は扱わない。
+`push-results`には`config/`を送る経路がなく、通常のnightlyが監視設定を上書きすることはない。
+どの同期も`--delete`を使わず、R2またはローカルの片側だけにあるファイルを削除しない。
+
+監視設定は通常実行とは分けて明示的に登録・更新する。
+
+```bash
+uv run ai-watch-r2 create-watchlist --file /path/outside/repository/watchlist.yaml --sources ./sources.yaml --root /path/to/runtime
+uv run ai-watch-r2 update-watchlist --file /path/outside/repository/watchlist.yaml --sources ./sources.yaml --root /path/to/runtime
+```
+
+`create-watchlist`は既存設定があれば終了コード3で拒否する。
+`update-watchlist`は直前のpullで保存したETagが一致する場合だけ更新する。
+終了コード3になった場合は再pullし、手元との差分を確認してから改めて明示更新する。
+これら2コマンドを通常nightlyから呼ばない。
+
+GitHub Actionsからの呼び出しとcron設定は、運用基盤移行のworkflowで接続する。
 
 ## 手動実行
 
