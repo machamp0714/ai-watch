@@ -112,7 +112,9 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("sync", help="ダイジェストのチェックを今すぐ backlog / outputs に反映").set_defaults(func=cmd_sync)
     sub.add_parser("init-vault", help="vault に初期ファイルを作る（既存は触らない）").set_defaults(func=cmd_init_vault)
-    sub.add_parser("doctor", help="実行環境の事前チェック").set_defaults(func=cmd_doctor)
+    doctor = sub.add_parser("doctor", help="実行環境の事前チェック")
+    doctor.add_argument("--ci", action="store_true", help="GitHub Actions向けにX関連を省略して確認")
+    doctor.set_defaults(func=cmd_doctor)
     sub.add_parser("watchlist", help="監視対象と設定状態を確認").set_defaults(func=cmd_watchlist)
     return p
 

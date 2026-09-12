@@ -8,7 +8,10 @@ LLM 周辺（Claude Code / Codex の更新、注目記事）を夜間に収集�
 
 ```mermaid
 flowchart TD
-    CRON["launchd 毎日 05:00 JST"] --> N["ai-watch nightly<br/>window = 直近 30h"]
+    GHA["GitHub Actions<br/>毎日 20:00 UTC"] --> PULL["ai-watch-r2 pull<br/>非公開R2から設定・状態を取得"]
+    PULL --> N["ai-watch nightly --skip-x-collect<br/>window = 直近 30h"]
+    LOCAL["ローカル手動実行<br/>X収集を使う場合"] --> NLOCAL["ai-watch nightly"]
+    NLOCAL --> SRC
     N --> SRC
 
     subgraph C1["1. collect — HTTP のみ / LLM 不使用"]
@@ -21,7 +24,7 @@ flowchart TD
 
     subgraph C2["2. x_collect — LLM 使用"]
         direction LR
-        XM["x_mcp adapter"] --> XC["claude -p + Playwright MCP<br/>閲覧系ツールのみ / budget $1.5"]
+        XM["x_mcp adapter"] --> XC["Actions: 空の成功段階<br/>ローカル: claude -p + Playwright MCP"]
     end
 
     XC --> DG
@@ -54,11 +57,18 @@ flowchart TD
         RD --> JSON["digest.json<br/>UI向けの構造化データ"]
     end
 
-    MD --> OUT["vault 00_Self/ai-watch/digests/&lt;date&gt;.md / .json"]
+    MD --> OUT["vault/digests/&lt;date&gt;.md / .json"]
     JSON --> OUT
     OUT --> LOG["vault log.md に 1 行追記"]
     OUT --> MARK[("seen.sqlite に mark")]
     OUT --> NOTIF["warnings あり or untriaged なら通知"]
+    OUT --> PUSH["ai-watch-r2 push-results<br/>成果物だけをcopy-onlyで保存"]
+    PUSH --> R2[("非公開R2")]
+    R2 --> WORKER["Cloudflare Worker<br/>R2 bindingでJSONを取得"]
+    WORKER --> ACCESS["Cloudflare Access"]
+    ACCESS --> UI["PC / モバイルUI"]
+    UI --> CHECKS[("R2 checks/*.jsonl")]
+    CHECKS --> PULL
 ```
 
 LLM（`claude -p`）を使うのは **x_collect と triage の 2 箇所だけ**。残りの 20 ソースの収集は素の HTTP で、トークンを消費しない。
@@ -87,6 +97,18 @@ uv sync
 uv run ai-watch init-vault          # vault に profile.md 等を作る（既存は触らない）
 uv run ai-watch doctor              # claude / npx / vault / MCP 設定の事前チェック
 ```
+
+通常の`doctor`はローカル実行向けにX収集環境も確認する。
+GitHub Actions相当の確認では`--ci`を付け、X収集の`npx`とPlaywright profileを省略する。
+どちらも`ANTHROPIC_API_KEY`、R2の4環境変数、AWS CLI v2を確認し、値そのものは出力しない。
+
+```bash
+uv run ai-watch doctor
+uv run ai-watch doctor --ci
+AI_WATCH_WORKER_URL=https://example.workers.dev uv run ai-watch doctor --ci
+```
+
+Worker URLを指定した確認では、200応答またはCloudflare Accessのログインredirectを正常とする。
 
 R2同期にはPython依存とは別にAWS CLI v2が必要である。
 条件付き更新に使うオプションが利用できることを確認する。
@@ -272,7 +294,11 @@ uv run ai-watch collect --only hn           # 1 ソースだけ疎通
 uv run ai-watch sync                        # ダイジェストのチェックを今すぐ反映
 ```
 
-## launchd（毎日 05:00）
+## launchd（ローカル代替・移行後は停止）
+
+launchd設定はX収集を含むローカル運用の代替と、移行時のrollback用に残す。
+GitHub Actionsの`workflow_dispatch`とR2往復が成功した後はlaunchdを停止し、定期実行を並行させない。
+並行実行はLLM費用の重複と、異なる状態を持つ2つのwriterを生むためである。
 
 ```bash
 mkdir -p logs
@@ -283,6 +309,9 @@ tail -f logs/nightly.err.log
 ```
 
 解除: `launchctl bootout gui/$(id -u)/com.machamp.ai-watch`
+
+停止後に自動起動へ戻さない場合は、`~/Library/LaunchAgents/com.machamp.ai-watch.plist`も削除する。
+リポジトリ内のplistはrollback手順の記録として残す。
 
 スリープで 05:00 を過ぎた場合は次の起床時に実行される（launchd の StartCalendarInterval の仕様）。
 

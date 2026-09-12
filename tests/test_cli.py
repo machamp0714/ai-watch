@@ -51,6 +51,19 @@ def test_nightly_passes_skip_x_collect_to_pipeline(tmp_path, monkeypatch, capsys
     assert json.loads(capsys.readouterr().out) == {"mode": "triaged"}
 
 
+def test_doctor_accepts_ci_mode(tmp_path, monkeypatch):
+    captured = {}
+
+    def fake_doctor(settings, args):
+        captured["ci"] = args.ci
+        return 0
+
+    monkeypatch.setattr("ai_watch.cli.cmd_doctor", fake_doctor)
+
+    assert main(["--config", str(_cfg(tmp_path)), "doctor", "--ci"]) == 0
+    assert captured == {"ci": True}
+
+
 def test_sync_collects_todays_checks(tmp_path, capsys):
     cfg = _cfg(tmp_path)
     assert main(["--config", str(cfg), "init-vault"]) == 0
