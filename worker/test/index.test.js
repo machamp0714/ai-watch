@@ -180,10 +180,34 @@ test("日付ページはPencilの階層とアクセシブルな操作を描画�
   assert.match(html, /backlog に追加を予約/);
   assert.match(html, /X 投稿待ちに予約/);
   assert.match(html, /aria-live="polite"/);
-  assert.match(html, /prefers-color-scheme: dark/);
   assert.match(html, /@media \(max-width: 700px\)/);
   assert.doesNotMatch(html, /data-item-id="aw-00000003"[^>]*data-check/);
   assert.doesNotMatch(html, /data-item-id="aw-00000004"[^>]*data-check/);
+});
+
+
+test("OSがダーク設定でもPencilのライト配色を維持する", async () => {
+  const bucket = new FakeBucket({
+    "vault/digests/2026-09-12.json": JSON.stringify(DIGEST)
+  });
+
+  const response = await worker.fetch(
+    new Request("https://watch.example/2026-09-12"),
+    env(bucket)
+  );
+  const html = await response.text();
+
+  assert.match(html, /<meta name="color-scheme" content="light">/);
+  assert.match(html, /color-scheme: light;/);
+  assert.match(html, /--bg: #f7f8f5;/);
+  assert.match(html, /--paper: #ffffff;/);
+  assert.match(html, /--ink: #202c27;/);
+  assert.match(html, /--muted: #59665f;/);
+  assert.match(html, /--green: #276047;/);
+  assert.match(html, /--tint: #eaf1e9;/);
+  assert.match(html, /--line: #d7ded7;/);
+  assert.match(html, /--control: #7b887f;/);
+  assert.doesNotMatch(html, /prefers-color-scheme:\s*dark/);
 });
 
 

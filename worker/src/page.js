@@ -1,6 +1,6 @@
 const COLORS = `
 :root {
-  color-scheme: light dark;
+  color-scheme: light;
   --bg: #f7f8f5;
   --paper: #ffffff;
   --ink: #202c27;
@@ -11,20 +11,6 @@ const COLORS = `
   --control: #7b887f;
   --error-bg: #fff2ee;
   --error: #a13329;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #19231e;
-    --paper: #233028;
-    --ink: #e8eee9;
-    --muted: #b2bdb5;
-    --green: #a7d7b7;
-    --tint: #2d4436;
-    --line: #425148;
-    --control: #b2bdb5;
-    --error-bg: #4a2924;
-    --error: #ffc1b7;
-  }
 }
 `;
 
@@ -80,7 +66,7 @@ function layout(title, body, nonce, { compact = false } = {}) {
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="color-scheme" content="light dark">
+  <meta name="color-scheme" content="light">
   <title>${escapeHtml(title)} · ai-watch</title>
   <style nonce="${nonce}">
     ${COLORS}
