@@ -1,0 +1,38 @@
+name: Keep scheduled workflows active
+
+on:
+  schedule:
+    - cron: "17 3 1 * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ai-watch-keepalive
+  cancel-in-progress: false
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: mainを取得
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+      - name: 月次の活動を記録
+        shell: bash
+        run: |
+          date -u +%Y-%m-%d > .github/keepalive
+          git add .github/keepalive
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
+              commit -m 'chore: scheduled workflowを有効に保つ'
+          git push origin HEAD:main

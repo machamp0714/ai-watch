@@ -92,6 +92,37 @@ def test_nightly_end_to_end(tmp_path):
     assert "新着はありませんでした" in v.read_digest(date(2026, 8, 24))
 
 
+def test_nightly_can_skip_x_collect_and_saves_empty_stage(tmp_path):
+    settings = _settings(tmp_path)
+    settings.sources.append(
+        SourceConfig(
+            id="x",
+            type="x_mcp",
+            group="x",
+            params={"urls": ["https://x.example.invalid/bookmarks"]},
+        )
+    )
+
+    report = run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        dry_run=True,
+        skip_x_collect=True,
+        runner=FakeRunner(),
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+
+    stage = json.loads(
+        (settings.data_dir / "work" / DAY.isoformat() / "x_collect.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert stage == {"items": [], "warnings": [], "counts": {}}
+    assert report.collected == 2
+
+
 def test_rerun_from_render_uses_work_files(tmp_path):
     s = _settings(tmp_path)
     runner = FakeRunner()

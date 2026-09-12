@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from types import SimpleNamespace
 
 from ai_watch.cli import main
 from ai_watch.pipeline import today_jst
@@ -31,6 +32,23 @@ def test_init_vault_then_sync(tmp_path, capsys):
 def test_nightly_rejects_unknown_stage(tmp_path):
     cfg = _cfg(tmp_path)
     assert main(["--config", str(cfg), "nightly", "--from", "nope"]) == 2
+
+
+def test_nightly_passes_skip_x_collect_to_pipeline(tmp_path, monkeypatch, capsys):
+    captured = {}
+
+    def fake_run_nightly(settings, day, **kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(to_dict=lambda: {"mode": "triaged"})
+
+    monkeypatch.setattr("ai_watch.cli.run_nightly", fake_run_nightly)
+
+    assert (
+        main(["--config", str(_cfg(tmp_path)), "nightly", "--skip-x-collect"])
+        == 0
+    )
+    assert captured["skip_x_collect"] is True
+    assert json.loads(capsys.readouterr().out) == {"mode": "triaged"}
 
 
 def test_sync_collects_todays_checks(tmp_path, capsys):

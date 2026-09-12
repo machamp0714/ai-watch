@@ -79,6 +79,7 @@ def _carry_over_checks(md: str, ids: set[str]) -> str:
 
 def run_nightly(
     settings: Settings, day: date, *, from_stage: str = "collect", dry_run: bool = False,
+    skip_x_collect: bool = False,
     now: datetime | None = None, runner: Any | None = None, http: Any | None = None,
     notifier: Callable[[str, str], None] = notify,
 ) -> NightlyReport:
@@ -114,8 +115,11 @@ def run_nightly(
             c = collect(settings, window, ctx(), day=day)
             work.save("collect", {"items": [raw_to_dict(i) for i in c.items], "warnings": c.warnings, "counts": c.counts})
         if start <= STAGES.index("x_collect"):
-            x = collect(settings, window, ctx(), day=day, types={"x_mcp"}, exclude_types=set())
-            work.save("x_collect", {"items": [raw_to_dict(i) for i in x.items], "warnings": x.warnings, "counts": x.counts})
+            if skip_x_collect:
+                work.save("x_collect", _EMPTY)
+            else:
+                x = collect(settings, window, ctx(), day=day, types={"x_mcp"}, exclude_types=set())
+                work.save("x_collect", {"items": [raw_to_dict(i) for i in x.items], "warnings": x.warnings, "counts": x.counts})
         c_data = work.load("collect") or _EMPTY
         x_data = work.load("x_collect") or _EMPTY
         warnings = list(c_data["warnings"]) + list(x_data["warnings"])

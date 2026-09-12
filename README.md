@@ -184,7 +184,43 @@ uv run ai-watch-r2 update-watchlist --file /path/outside/repository/watchlist.ya
 終了コード3になった場合は再pullし、手元との差分を確認してから改めて明示更新する。
 これら2コマンドを通常nightlyから呼ばない。
 
-GitHub Actionsからの呼び出しとcron設定は、運用基盤移行のworkflowで接続する。
+GitHub Actionsからの呼び出しとcron設定は、次のnightly workflowで接続する。
+
+## GitHub Actionsでのnightly実行
+
+`.github/workflows/nightly.yml`は毎日20:00 UTC（05:00 JST）と手動実行で起動する。
+同時実行は`ai-watch-nightly` concurrency groupで直列化し、実行中のjobを途中で打ち切らない。
+
+実行順はR2からのpull、`ai-watch nightly --skip-x-collect`、R2への`push-results`である。
+pullまたはnightlyが失敗した場合は後続へ進まず、実行URLだけを載せたGitHub Issueで通知する。
+nightlyのJSON出力、監視設定、ダイジェスト本文はActionsログやartifactへ公開しない。
+
+workflowには次のGitHub Actions Secretsが必要である。
+
+```text
+ANTHROPIC_API_KEY
+R2_ACCESS_KEY_ID
+R2_SECRET_ACCESS_KEY
+```
+
+次のGitHub Actions Variablesも必要である。
+
+```text
+CLOUDFLARE_ACCOUNT_ID
+R2_BUCKET_NAME
+```
+
+Claude Code CLI、AWS CLI v2、Python依存はrunner上で準備する。
+`x_collect`はログイン済みPlaywrightセッションをCIへ持ち込まないため、空の成功段階として保存する。
+引数を指定しないローカルnightlyでは、従来どおりX収集を行う。
+
+初回実行前に、非公開の`config/watchlist.yaml`を`create-watchlist`でR2へ明示登録する必要がある。
+workflowは公開サンプルへのフォールバックや設定の初回登録を行わない。
+設定本文をGitHub Actionsの入力、ログ、Issueへ貼り付けない。
+
+公開リポジトリは60日間活動がないとscheduled workflowが自動停止する。
+`.github/workflows/keepalive.yml`は毎月1日に`.github/keepalive`だけを更新し、この停止を防ぐ。
+このjob以外はリポジトリへの書き込み権限を持たない。
 
 ## 手動実行
 
