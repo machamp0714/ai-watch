@@ -105,3 +105,29 @@ def test_keepalive_makes_monthly_activity_with_one_tracked_file():
 
 def test_production_workflow_replaces_temporary_api_probe():
     assert not (WORKFLOWS / "claude-api-probe.yml").exists()
+
+
+def test_ci_runs_python_and_worker_verification_without_secrets():
+    workflow = _workflow("ci.yml")
+
+    assert workflow["on"]["pull_request"] == ""
+    assert workflow["on"]["push"] == {"branches": ["main"]}
+    assert workflow["permissions"] == {"contents": "read"}
+
+    python_steps = _steps(workflow, "python")
+    python_commands = "\n".join(step.get("run", "") for step in python_steps)
+    assert "uv sync --frozen" in python_commands
+    assert "uv run pytest -q" in python_commands
+
+    worker_steps = _steps(workflow, "worker")
+    worker_commands = "\n".join(step.get("run", "") for step in worker_steps)
+    assert "npm ci" in worker_commands
+    assert "npm run test:worker" in worker_commands
+    assert "wrangler deploy --dry-run" in worker_commands
+
+    for job in workflow["jobs"].values():
+        for step in job["steps"]:
+            assert "secrets." not in repr(step)
+            if "uses" in step:
+                _, reference = step["uses"].rsplit("@", 1)
+                assert re.fullmatch(r"[0-9a-f]{40}", reference.split()[0])
