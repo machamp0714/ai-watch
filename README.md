@@ -50,10 +50,12 @@ flowchart TD
 
     subgraph C5["5. render"]
         direction LR
-        RD["render_digest<br/>try 3 / read 3 / update 5 件"] --> MD["digest.md<br/>同日再実行時は既存のチェックを引き継ぐ"]
+        RD["共通の選抜結果<br/>try 3 / read 3 / update 5 件"] --> MD["digest.md<br/>同日再実行時は既存のチェックを引き継ぐ"]
+        RD --> JSON["digest.json<br/>UI向けの構造化データ"]
     end
 
-    MD --> OUT["vault 00_Self/ai-watch/digests/&lt;date&gt;.md"]
+    MD --> OUT["vault 00_Self/ai-watch/digests/&lt;date&gt;.md / .json"]
+    JSON --> OUT
     OUT --> LOG["vault log.md に 1 行追記"]
     OUT --> MARK[("seen.sqlite に mark")]
     OUT --> NOTIF["warnings あり or untriaged なら通知"]
@@ -61,7 +63,9 @@ flowchart TD
 
 LLM（`claude -p`）を使うのは **x_collect と triage の 2 箇所だけ**。残りの 20 ソースの収集は素の HTTP で、トークンを消費しない。
 
-`--dry-run` を付けると vault には書かず `data/work/<date>/digest.md` に出力し、`sync_decisions` と `seen.sqlite` への書き込みもスキップする。
+`--dry-run` を付けるとvaultには書かず、`data/work/<date>/digest.md`と`digest.json`へ出力する。
+この場合は`sync_decisions`と`seen.sqlite`への書き込みもスキップする。
+MarkdownとJSONは同じ選抜結果から生成され、JSONは`schemas/digest.schema.json`に従う。
 
 ### 朝のチェックが翌日に効く仕組み
 
@@ -225,7 +229,7 @@ workflowは公開サンプルへのフォールバックや設定の初回登録
 ## 手動実行
 
 ```bash
-uv run ai-watch nightly --dry-run           # vault に書かず data/work/<date>/digest.md に出す
+uv run ai-watch nightly --dry-run           # vault に書かず data/work/<date>/digest.mdと.jsonに出す
 uv run ai-watch nightly                     # 本番
 uv run ai-watch nightly --from triage       # 収集済みデータから再トリアージ
 uv run ai-watch collect --only hn           # 1 ソースだけ疎通
@@ -252,4 +256,4 @@ tail -f logs/nightly.err.log
 - `data/work/YYYY-MM-DD/*.json` — 段ごとの中間出力（`--from` 再実行用）
 - `data/seen.sqlite` — 機械の既読
 - `data/decisions.jsonl` — 朝のチェック（try / share / skip_implicit）
-- vault `00_Self/ai-watch/` — digests / backlog / outputs / log / profile
+- vault `00_Self/ai-watch/` — digests（MarkdownとJSON）/ backlog / outputs / log / profile

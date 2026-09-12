@@ -78,6 +78,9 @@ def test_nightly_end_to_end(tmp_path):
     assert r.warnings and r.warnings[0].startswith("bad:")
     md = v.read_digest(DAY)
     assert md and "- [ ] 🧪 **Claude Code hooks**" in md and "  - 試し方: やる" in md
+    digest_json = json.loads(v.digest_path(DAY).with_suffix(".json").read_text(encoding="utf-8"))
+    assert digest_json["date"] == DAY.isoformat()
+    assert digest_json["items_shown"] == r.shown
     assert "> ⚠ 取得失敗: bad:" in md
     assert (s.data_dir / "work" / "2026-08-23" / "triage.json").exists()
     assert (s.data_dir / "raw" / "2026-08-23" / "feed.json").exists()
@@ -138,6 +141,7 @@ def test_dry_run_touches_nothing_in_vault(tmp_path):
     r = run_nightly(s, DAY, dry_run=True, now=NOW, runner=FakeRunner(), http=_http(), notifier=lambda t, m: None)
     assert not (s.vault_dir / "digests").exists() and not (s.vault_dir / "log.md").exists()
     assert Path(r.digest_path) == s.data_dir / "work" / "2026-08-23" / "digest.md" and Path(r.digest_path).exists()
+    assert Path(r.digest_path).with_suffix(".json").exists()
     assert not (s.data_dir / "seen.sqlite").exists()
 
 
