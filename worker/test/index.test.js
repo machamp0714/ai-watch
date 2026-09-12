@@ -128,12 +128,12 @@ function env(bucket) {
 }
 
 
-test("初回deployでは公開routeを作らず既存R2だけをbindingする", () => {
+test("Access保護後はworkers.devを有効にして既存R2だけをbindingする", () => {
   const config = JSON.parse(
     readFileSync(new URL("../../wrangler.jsonc", import.meta.url), "utf-8")
   );
 
-  assert.equal(config.workers_dev, false);
+  assert.equal(config.workers_dev, true);
   assert.equal(config.preview_urls, false);
   assert.deepEqual(config.r2_buckets, [
     { binding: "AI_WATCH_BUCKET", bucket_name: "ai-watch-prod" }

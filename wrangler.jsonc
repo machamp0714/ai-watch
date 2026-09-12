@@ -3,7 +3,7 @@
   "name": "ai-watch",
   "main": "worker/src/index.js",
   "compatibility_date": "2026-09-12",
-  "workers_dev": false,
+  "workers_dev": true,
   "preview_urls": false,
   "r2_buckets": [
     {
