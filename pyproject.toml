@@ -12,6 +12,7 @@ dependencies = [
 
 [project.scripts]
 ai-watch = "ai_watch.cli:main"
+ai-watch-r2 = "ai_watch.r2_cli:main"
 
 [dependency-groups]
 dev = ["pytest>=8"]
