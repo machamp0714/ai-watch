@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 from ai_watch.cli import main
@@ -46,3 +47,62 @@ def test_sync_collects_todays_checks(tmp_path, capsys):
     out = capsys.readouterr().out
     assert "added 1" in out
     assert "^aw-00000001" in vault.backlog.read_text()
+
+
+def test_invalid_watchlist_returns_configuration_error_without_private_value(tmp_path, capsys):
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("version: 1\ntools: [private-interest\n", encoding="utf-8")
+    cfg = tmp_path / "sources.yaml"
+    cfg.write_text(f"defaults:\n  watchlist_file: {watchlist}\nsources: []\n", encoding="utf-8")
+
+    assert main(["--config", str(cfg), "sync"]) == 2
+
+    captured = capsys.readouterr()
+    assert "設定エラー" in captured.err
+    assert "private-interest" not in captured.err
+
+
+def test_watchlist_command_is_read_only_and_shows_configuration_states(tmp_path, capsys, monkeypatch):
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text("""version: 1
+tools:
+  - id: active
+    name: 有効対象
+    enabled: true
+    focus: [更新]
+    source_ids: [feed]
+  - id: pending
+    name: 設定待ち対象
+    enabled: true
+    focus: []
+    source_ids: []
+  - id: disabled
+    name: 停止対象
+    enabled: false
+    focus: []
+    source_ids: [feed]
+""", encoding="utf-8")
+    cfg = tmp_path / "sources.yaml"
+    cfg.write_text(f"""defaults:
+  vault_dir: {tmp_path / 'vault'}
+  data_dir: {tmp_path / 'data'}
+sources:
+  - id: feed
+    type: rss
+""", encoding="utf-8")
+    monkeypatch.setenv("AI_WATCH_WATCHLIST_FILE", str(watchlist))
+
+    def unexpected_call(*args, **kwargs):
+        raise AssertionError("外部クライアントを作成してはいけません")
+
+    monkeypatch.setattr("ai_watch.cli.make_client", unexpected_call)
+    monkeypatch.setattr("ai_watch.cli.ClaudeRunner", unexpected_call)
+
+    assert main(["--config", str(cfg), "watchlist"]) == 0
+
+    rows = json.loads(capsys.readouterr().out)
+    assert [row["status"] for row in rows] == [
+        "有効（取得結果は別途確認）", "設定待ち", "停止中",
+    ]
+    assert not (tmp_path / "vault").exists()
+    assert not (tmp_path / "data").exists()

@@ -19,6 +19,7 @@ from .render import Limits, render_digest, shown_item_ids
 from .seen import SeenStore
 from .triage import TriageOutcome, triage
 from .vault import Vault
+from .watchlist import watchlist_profile
 
 STAGES = ["collect", "x_collect", "sync_decisions", "triage", "render"]
 JST = ZoneInfo("Asia/Tokyo")
@@ -139,7 +140,11 @@ def run_nightly(
             else:
                 with SeenStore(seen_path) as seen:
                     new_items = seen.filter_new(all_items, day)
-            outcome = triage(new_items, profile_md=vault.read_profile(), decisions=store.recent(30),
+            profile_md = vault.read_profile()
+            extra_profile = watchlist_profile(settings.watchlist)
+            if extra_profile:
+                profile_md = profile_md.rstrip() + "\n\n" + extra_profile
+            outcome = triage(new_items, profile_md=profile_md, decisions=store.recent(30),
                              runner=runner, root=settings.root, day=day)
             work.save("triage", {"items": [i.to_dict() for i in new_items], "outcome": outcome.to_dict()})
         t_data = work.load("triage") or {"items": [], "outcome": TriageOutcome("triaged", [], 0.0).to_dict()}

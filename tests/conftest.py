@@ -8,7 +8,8 @@ from ai_watch.adapters.base import FetchContext
 
 @pytest.fixture(autouse=True)
 def _isolate_ai_watch_env(monkeypatch):
-    for k in ("AI_WATCH_VAULT_DIR", "AI_WATCH_DATA_DIR", "AI_WATCH_CONFIG"):
+    for k in ("AI_WATCH_VAULT_DIR", "AI_WATCH_DATA_DIR", "AI_WATCH_CONFIG",
+              "AI_WATCH_WATCHLIST_FILE"):
         monkeypatch.delenv(k, raising=False)
 
 

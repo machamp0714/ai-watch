@@ -7,6 +7,8 @@ from typing import Any
 
 import yaml
 
+from .watchlist import WatchedTool, WatchlistError, load_watchlist
+
 DEFAULT_VAULT_DIR = (
     "~/Library/Mobile Documents/iCloud~md~obsidian/Documents/Personal/00_Self/ai-watch"
 )
@@ -31,6 +33,7 @@ class Settings:
     model: str
     sources: list[SourceConfig]
     root: Path  # sources.yaml のあるディレクトリ（prompts/ schemas/ config/ の基準）
+    watchlist: list[WatchedTool] = field(default_factory=list)
 
     def source_groups(self) -> dict[str, str]:
         return {s.id: s.group for s in self.sources}
@@ -54,6 +57,18 @@ def load_settings(path: Path) -> Settings:
             id=s.pop("id"), type=s.pop("type"), group=s.pop("group", "misc"), params=s,
         ))
 
+    watchlist: list[WatchedTool] = []
+    watchlist_env = "AI_WATCH_WATCHLIST_FILE"
+    has_watchlist = watchlist_env in os.environ or "watchlist_file" in d
+    watchlist_file = os.environ[watchlist_env] if watchlist_env in os.environ else d.get("watchlist_file")
+    if has_watchlist:
+        if not isinstance(watchlist_file, str) or not watchlist_file.strip():
+            raise WatchlistError("watchlist_fileは空でないパスにしてください")
+        source_ids = [source.id for source in sources]
+        if len(set(source_ids)) != len(source_ids):
+            raise WatchlistError("収集先IDが重複しています")
+        watchlist = load_watchlist(_path(watchlist_file, watchlist_file, root), set(source_ids))
+
     return Settings(
         vault_dir=_path(os.environ.get("AI_WATCH_VAULT_DIR") or d.get("vault_dir"), DEFAULT_VAULT_DIR, root),
         data_dir=_path(os.environ.get("AI_WATCH_DATA_DIR") or d.get("data_dir"), "./data", root),
@@ -64,4 +79,5 @@ def load_settings(path: Path) -> Settings:
         model=str(d.get("model", "sonnet")),
         sources=sources,
         root=root,
+        watchlist=watchlist,
     )

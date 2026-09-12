@@ -11,6 +11,7 @@ from ai_watch.config import Settings, SourceConfig
 from ai_watch.pipeline import STAGES, run_nightly, today_jst
 from ai_watch.seen import SeenStore
 from ai_watch.vault import Vault
+from ai_watch.watchlist import WatchedTool
 
 REPO_ROOT = Path(__file__).resolve().parents[1]   # prompts/ schemas/ は本物を使う
 RSS = b"""<rss version="2.0"><channel><title>t</title>
@@ -36,6 +37,16 @@ class FakeRunner:
                   "signals": {"attention": 1, "tryability": 2, "jp_gap": 1, "relevance": 2},
                   "reason": "テスト", "try_plan": "やる", "article_angle": "角度"} for n, i in enumerate(ids)]
         return ClaudeResult(True, {"items": items}, 0.11, "success")
+
+
+class CaptureRunner(FakeRunner):
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def run(self, prompt, schema, **kwargs):
+        self.prompts.append(prompt)
+        return super().run(prompt, schema, **kwargs)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -217,3 +228,47 @@ def test_render_failure_notifies_and_logs(tmp_path, monkeypatch):
     assert notes == ["2026-08-23: FAILED RuntimeError: boom"]
     assert v.read_digest(DAY) is None
     assert "FAILED: RuntimeError: boom" in v.log.read_text().rstrip().splitlines()[-1]
+
+
+def test_watchlist_augments_prompt_without_editing_profile(tmp_path):
+    settings = _settings(tmp_path)
+    settings.watchlist = [
+        WatchedTool("example-tool", "サンプルツール", True, ("サンプルの更新",), ()),
+    ]
+    vault = Vault(settings.vault_dir)
+    vault.write_atomic(vault.profile, "元の関心\n")
+    runner = CaptureRunner()
+
+    run_nightly(
+        settings, DAY, now=NOW, dry_run=True, runner=runner,
+        http=_http(), notifier=lambda *args: None,
+    )
+
+    assert "サンプルツール" in runner.prompts[0]
+    assert "サンプルの更新" in runner.prompts[0]
+    assert vault.profile.read_text(encoding="utf-8") == "元の関心\n"
+
+
+def test_rerun_from_triage_uses_new_watchlist_but_render_does_not_retriage(tmp_path):
+    settings = _settings(tmp_path)
+    runner = CaptureRunner()
+    run_nightly(
+        settings, DAY, now=NOW, dry_run=True, runner=runner,
+        http=_http(), notifier=lambda *args: None,
+    )
+    settings.watchlist = [
+        WatchedTool("new-tool", "新しい関心", True, ("新しい更新",), ()),
+    ]
+
+    run_nightly(
+        settings, DAY, from_stage="triage", now=NOW, dry_run=True,
+        runner=runner, http=None, notifier=lambda *args: None,
+    )
+    assert len(runner.prompts) == 2
+    assert "新しい関心" in runner.prompts[1]
+
+    run_nightly(
+        settings, DAY, from_stage="render", now=NOW, dry_run=True,
+        runner=runner, http=None, notifier=lambda *args: None,
+    )
+    assert len(runner.prompts) == 2
