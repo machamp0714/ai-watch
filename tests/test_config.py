@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from ai_watch.config import load_settings
+import pytest
+
+from ai_watch.config import load_settings, load_source_ids
+from ai_watch.watchlist import WatchlistError, load_watchlist
 
 
 YAML = """
@@ -50,6 +53,107 @@ def test_env_override(tmp_path: Path, monkeypatch):
     p.write_text(YAML)
     monkeypatch.setenv("AI_WATCH_VAULT_DIR", str(tmp_path / "v"))
     monkeypatch.setenv("AI_WATCH_DATA_DIR", str(tmp_path / "d"))
+    monkeypatch.setenv("AI_WATCH_CHECKS_DIR", str(tmp_path / "c"))
     s = load_settings(p)
     assert s.vault_dir == tmp_path / "v"
     assert s.data_dir == tmp_path / "d"
+    assert s.checks_dir == tmp_path / "c"
+
+
+def test_watchlist_environment_overrides_config(tmp_path, monkeypatch):
+    config = tmp_path / "sources.yaml"
+    config.write_text("defaults:\n  watchlist_file: missing.yaml\nsources: []\n", encoding="utf-8")
+    private = tmp_path / "private-watchlist.yaml"
+    private.write_text("version: 1\ntools: []\n", encoding="utf-8")
+    monkeypatch.setenv("AI_WATCH_WATCHLIST_FILE", str(private))
+    assert load_settings(config).watchlist == []
+
+
+def test_watchlist_relative_path_uses_sources_directory(tmp_path):
+    config = tmp_path / "sources.yaml"
+    config.write_text("defaults:\n  watchlist_file: private.yaml\nsources: []\n", encoding="utf-8")
+    (tmp_path / "private.yaml").write_text("version: 1\ntools: []\n", encoding="utf-8")
+    assert load_settings(config).watchlist == []
+
+
+@pytest.mark.parametrize("value", ["", "   "])
+def test_watchlist_environment_rejects_explicit_empty_value(tmp_path, monkeypatch, value):
+    config = tmp_path / "sources.yaml"
+    config.write_text("sources: []\n", encoding="utf-8")
+    monkeypatch.setenv("AI_WATCH_WATCHLIST_FILE", value)
+    with pytest.raises(WatchlistError, match="watchlist_file"):
+        load_settings(config)
+
+
+def test_watchlist_rejects_missing_explicit_file(tmp_path):
+    config = tmp_path / "sources.yaml"
+    config.write_text("defaults:\n  watchlist_file: missing.yaml\nsources: []\n", encoding="utf-8")
+    with pytest.raises(WatchlistError, match="missing.yaml"):
+        load_settings(config)
+
+
+def test_duplicate_source_ids_are_rejected_when_watchlist_is_enabled(tmp_path):
+    config = tmp_path / "sources.yaml"
+    config.write_text("""defaults:
+  watchlist_file: watchlist.yaml
+sources:
+  - id: duplicate
+    type: rss
+  - id: duplicate
+    type: rss
+""", encoding="utf-8")
+    (tmp_path / "watchlist.yaml").write_text("version: 1\ntools: []\n", encoding="utf-8")
+    with pytest.raises(WatchlistError, match="収集先ID"):
+        load_settings(config)
+
+
+def test_missing_watchlist_configuration_keeps_legacy_behavior(tmp_path):
+    config = tmp_path / "sources.yaml"
+    config.write_text("sources: []\n", encoding="utf-8")
+    assert load_settings(config).watchlist == []
+
+
+def test_public_watchlist_example_has_no_personal_tools():
+    root = Path(__file__).resolve().parents[1]
+    assert load_watchlist(root / "config/watchlist.example.yaml", set()) == []
+    assert load_settings(root / "sources.yaml").watchlist == []
+
+
+def test_load_source_ids_ignores_ambient_watchlist(tmp_path, monkeypatch):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(
+        "sources:\n  - id: example-feed\n    type: rss\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv(
+        "AI_WATCH_WATCHLIST_FILE",
+        str(tmp_path / "missing-private.yaml"),
+    )
+    assert load_source_ids(sources) == {"example-feed"}
+
+
+@pytest.mark.parametrize(
+    ("document", "expected"),
+    [
+        ("sources: wrong\n", "sources"),
+        ("sources:\n  - type: rss\n", r"sources\[1\]\.id"),
+        ("sources:\n  - id: duplicate\n  - id: duplicate\n", "重複"),
+        ("sources: [private-value\n", "YAML"),
+    ],
+)
+def test_load_source_ids_rejects_invalid_document_without_body(
+    tmp_path, document, expected,
+):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(document, encoding="utf-8")
+    with pytest.raises(WatchlistError, match=expected) as captured:
+        load_source_ids(sources)
+    assert "private-value" not in str(captured.value)
+
+
+def test_load_source_ids_missing_file_hides_parent_path(tmp_path):
+    sources = tmp_path / "private-parent" / "sources.yaml"
+    with pytest.raises(WatchlistError) as captured:
+        load_source_ids(sources)
+    assert "sources.yaml" in str(captured.value)
+    assert "private-parent" not in str(captured.value)

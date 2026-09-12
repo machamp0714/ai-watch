@@ -8,6 +8,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .adapters.base import FetchContext, TimeWindow, make_client
+from .checks import apply_check_events
 from .claude_runner import ClaudeRunner
 from .collect import collect
 from .config import Settings
@@ -15,10 +16,11 @@ from .decisions import DecisionStore, apply_decisions, parse_digest, sync_decisi
 from .models import Item, raw_from_dict, raw_to_dict
 from .normalize import normalize
 from .notify import log_line, notify
-from .render import Limits, render_digest, shown_item_ids
+from .render import Limits, render_digest, render_digest_data, shown_item_ids
 from .seen import SeenStore
 from .triage import TriageOutcome, triage
 from .vault import Vault
+from .watchlist import watchlist_profile
 
 STAGES = ["collect", "x_collect", "sync_decisions", "triage", "render"]
 JST = ZoneInfo("Asia/Tokyo")
@@ -78,6 +80,7 @@ def _carry_over_checks(md: str, ids: set[str]) -> str:
 
 def run_nightly(
     settings: Settings, day: date, *, from_stage: str = "collect", dry_run: bool = False,
+    skip_x_collect: bool = False,
     now: datetime | None = None, runner: Any | None = None, http: Any | None = None,
     notifier: Callable[[str, str], None] = notify,
 ) -> NightlyReport:
@@ -113,8 +116,11 @@ def run_nightly(
             c = collect(settings, window, ctx(), day=day)
             work.save("collect", {"items": [raw_to_dict(i) for i in c.items], "warnings": c.warnings, "counts": c.counts})
         if start <= STAGES.index("x_collect"):
-            x = collect(settings, window, ctx(), day=day, types={"x_mcp"}, exclude_types=set())
-            work.save("x_collect", {"items": [raw_to_dict(i) for i in x.items], "warnings": x.warnings, "counts": x.counts})
+            if skip_x_collect:
+                work.save("x_collect", _EMPTY)
+            else:
+                x = collect(settings, window, ctx(), day=day, types={"x_mcp"}, exclude_types=set())
+                work.save("x_collect", {"items": [raw_to_dict(i) for i in x.items], "warnings": x.warnings, "counts": x.counts})
         c_data = work.load("collect") or _EMPTY
         x_data = work.load("x_collect") or _EMPTY
         warnings = list(c_data["warnings"]) + list(x_data["warnings"])
@@ -126,6 +132,7 @@ def run_nightly(
             if dry_run:
                 added_dicts: list[dict] = []
             else:
+                apply_check_events(vault, settings.checks_dir, day)
                 added_dicts = [d.to_dict() for d in sync_decisions(vault, store, day, apply=True)]
             work.save("sync_decisions", {"added": added_dicts})
         decisions_added = len((work.load("sync_decisions") or {"added": []})["added"])
@@ -139,7 +146,11 @@ def run_nightly(
             else:
                 with SeenStore(seen_path) as seen:
                     new_items = seen.filter_new(all_items, day)
-            outcome = triage(new_items, profile_md=vault.read_profile(), decisions=store.recent(30),
+            profile_md = vault.read_profile()
+            extra_profile = watchlist_profile(settings.watchlist)
+            if extra_profile:
+                profile_md = profile_md.rstrip() + "\n\n" + extra_profile
+            outcome = triage(new_items, profile_md=profile_md, decisions=store.recent(30),
                              runner=runner, root=settings.root, day=day)
             work.save("triage", {"items": [i.to_dict() for i in new_items], "outcome": outcome.to_dict()})
         t_data = work.load("triage") or {"items": [], "outcome": TriageOutcome("triaged", [], 0.0).to_dict()}
@@ -148,6 +159,13 @@ def run_nightly(
 
         # 5. render + finalize -----------------------------------------------------
         md = render_digest(day, {i.id: i for i in new_items}, outcome, warnings, total_collected=len(all_items))
+        digest_data = render_digest_data(
+            day,
+            {i.id: i for i in new_items},
+            outcome,
+            warnings,
+            total_collected=len(all_items),
+        )
         if not dry_run:
             # 同日再実行（--from triage/render）で、日中に人がつけたチェックを失わないようにする:
             # 既存ダイジェストのチェックを回収・記録してから、新しい md にも同じチェックを引き継ぐ。
@@ -163,6 +181,10 @@ def run_nightly(
                     md = _carry_over_checks(md, checked_ids)
         shown = shown_item_ids(md)
         digest_path = (work.dir / "digest.md") if dry_run else vault.digest_path(day)
+        Vault.write_atomic(
+            digest_path.with_suffix(".json"),
+            json.dumps(digest_data, ensure_ascii=False, indent=2) + "\n",
+        )
         Vault.write_atomic(digest_path, md)
 
         # 注目テーブルに溢れた try も shown に入るので、チェックボックス付きの上位だけを数える

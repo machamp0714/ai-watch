@@ -46,7 +46,7 @@ def build_command(
 
 
 class ClaudeRunner:
-    """`claude -p` を subprocess で呼ぶ唯一の場所。API キーは使わない（Claude Code のサブスク OAuth で動く）。"""
+    """`claude -p`をsubprocessで呼ぶ唯一の場所。認証方法は実行環境へ委ねる。"""
 
     def __init__(self, claude_bin: str = "claude", model: str = "sonnet", cwd: Path | None = None,
                  run: Callable[..., subprocess.CompletedProcess] = subprocess.run):

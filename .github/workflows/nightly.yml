@@ -1,0 +1,87 @@
+name: Nightly
+
+on:
+  schedule:
+    - cron: "0 20 * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: ai-watch-nightly
+  cancel-in-progress: false
+
+jobs:
+  nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - name: リポジトリを取得
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: uvを準備
+        uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+        with:
+          version: "0.9.17"
+          enable-cache: false
+      - name: Python依存を準備
+        run: uv sync --frozen
+      - name: AWS CLI v2を確認
+        shell: bash
+        run: |
+          version="$(aws --version 2>&1)"
+          case "$version" in
+            aws-cli/2.*) printf '%s\n' "$version" ;;
+            *) printf '%s\n' 'AWS CLI v2が必要です' >&2; exit 1 ;;
+          esac
+      - name: Claude Codeを準備
+        run: npm install --global --prefix "$HOME/.local" @anthropic-ai/claude-code@2.1.269
+      - name: R2から取得
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
+        run: uv run ai-watch-r2 pull --root "$RUNNER_TEMP/ai-watch-runtime"
+      - name: nightlyを実行
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1"
+          AI_WATCH_VAULT_DIR: ${{ runner.temp }}/ai-watch-runtime/vault
+          AI_WATCH_DATA_DIR: ${{ runner.temp }}/ai-watch-runtime/data
+          AI_WATCH_WATCHLIST_FILE: ${{ runner.temp }}/ai-watch-runtime/config/watchlist.yaml
+          AI_WATCH_CHECKS_DIR: ${{ runner.temp }}/ai-watch-runtime/checks
+        run: uv run ai-watch nightly --skip-x-collect > "$RUNNER_TEMP/nightly-report.json"
+      - name: R2へ成果物を保存
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          R2_BUCKET_NAME: ${{ vars.R2_BUCKET_NAME }}
+        run: uv run ai-watch-r2 push-results --root "$RUNNER_TEMP/ai-watch-runtime"
+
+  notify-failure:
+    needs: nightly
+    if: ${{ always() && needs.nightly.result != 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: GitHub Issueで通知
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ALERT_TITLE: nightly自動実行に失敗しました
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        shell: bash
+        run: |
+          issue="$(gh issue list --repo "$GH_REPO" --state open --search "\"$ALERT_TITLE\" in:title" --json number --jq '.[0].number // empty')"
+          if [ -n "$issue" ]; then
+            gh issue comment "$issue" --repo "$GH_REPO" --body "再度失敗しました。実行URL: $RUN_URL"
+          else
+            gh issue create --repo "$GH_REPO" --title "$ALERT_TITLE" --assignee "$GITHUB_REPOSITORY_OWNER" --body "実行URL: $RUN_URL"
+          fi

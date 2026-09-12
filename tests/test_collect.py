@@ -8,12 +8,14 @@ import httpx
 from ai_watch.adapters.base import TimeWindow
 from ai_watch.collect import collect
 from ai_watch.config import Settings, SourceConfig
+from ai_watch.watchlist import WatchedTool
 
 RSS_OK = b"""<rss version="2.0"><channel><title>t</title>
 <item><title>recent</title><link>https://a/1</link><pubDate>Fri, 21 Aug 2026 10:00:00 GMT</pubDate></item>
 <item><title>old</title><link>https://a/2</link><pubDate>Mon, 01 Jun 2026 10:00:00 GMT</pubDate></item>
 <item><title>undated</title><link>https://a/3</link></item>
 </channel></rss>"""
+RSS_EMPTY = b"<rss version=\"2.0\"><channel><title>empty</title></channel></rss>"
 WINDOW = TimeWindow(start=datetime(2026, 8, 20, tzinfo=timezone.utc), end=datetime(2026, 8, 22, tzinfo=timezone.utc))
 
 
@@ -95,3 +97,82 @@ def test_collect_isolates_adapter_internal_keyerror(make_ctx, tmp_path):
     assert res.counts == {"good": 2}
     # nourl source の KeyError は warning になり、collect() は継続する
     assert any(w.startswith("nourl: KeyError") for w in res.warnings)
+
+
+def test_disabled_source_is_not_requested_even_with_only(make_ctx, tmp_path):
+    sources = [SourceConfig("good", "rss", "en", {"url": "https://ok/feed"})]
+    settings = _settings(tmp_path, sources)
+    settings.watchlist = [WatchedTool("tool", "対象", False, (), ("good",))]
+    calls = []
+
+    def responder(request):
+        calls.append(request)
+        return httpx.Response(200, content=RSS_OK)
+
+    result = collect(
+        settings, WINDOW, make_ctx(responder), day=date(2026, 8, 22), only_ids={"good"},
+    )
+
+    assert calls == []
+    assert result.items == []
+    assert result.counts == {}
+    assert result.warnings == []
+
+
+def test_enabled_shared_source_is_requested_once(make_ctx, tmp_path):
+    sources = [SourceConfig("shared", "rss", "en", {"url": "https://ok/feed"})]
+    settings = _settings(tmp_path, sources)
+    settings.watchlist = [
+        WatchedTool("a", "A", False, (), ("shared",)),
+        WatchedTool("b", "B", True, (), ("shared",)),
+    ]
+    calls = []
+
+    def responder(request):
+        calls.append(request)
+        return httpx.Response(200, content=RSS_OK)
+
+    result = collect(settings, WINDOW, make_ctx(responder), day=date(2026, 8, 22))
+
+    assert len(calls) == 1
+    assert result.counts == {"shared": 2}
+
+
+def test_all_disabled_owners_do_not_disable_unowned_source(make_ctx, tmp_path):
+    sources = [
+        SourceConfig("owned", "rss", "en", {"url": "https://owned/feed"}),
+        SourceConfig("community", "rss", "en", {"url": "https://community/feed"}),
+    ]
+    settings = _settings(tmp_path, sources)
+    settings.watchlist = [
+        WatchedTool("a", "A", False, (), ("owned",)),
+        WatchedTool("b", "B", False, (), ("owned",)),
+    ]
+    hosts = []
+
+    def responder(request):
+        hosts.append(request.url.host)
+        return httpx.Response(200, content=RSS_OK)
+
+    result = collect(settings, WINDOW, make_ctx(responder), day=date(2026, 8, 22))
+
+    assert hosts == ["community"]
+    assert result.counts == {"community": 2}
+
+
+def test_successful_empty_source_and_failed_source_remain_distinct(make_ctx, tmp_path):
+    sources = [
+        SourceConfig("empty", "rss", "en", {"url": "https://empty/feed"}),
+        SourceConfig("failed", "rss", "en", {"url": "https://failed/feed"}),
+    ]
+
+    def responder(request):
+        if request.url.host == "empty":
+            return httpx.Response(200, content=RSS_EMPTY)
+        return httpx.Response(403, content=b"forbidden")
+
+    result = collect(_settings(tmp_path, sources), WINDOW, make_ctx(responder), day=date(2026, 8, 22))
+
+    assert result.counts == {"empty": 0}
+    assert "failed" not in result.counts
+    assert len(result.warnings) == 1 and result.warnings[0].startswith("failed: HTTPStatusError")

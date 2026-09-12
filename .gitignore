@@ -4,3 +4,9 @@ __pycache__/
 data/
 logs/
 .pytest_cache/
+/config/watchlist.yaml
+/.private/
+/.wrangler/
+/.r2-state/
+/node_modules/
+/.playwright-cli/

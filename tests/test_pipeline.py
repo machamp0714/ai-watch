@@ -11,6 +11,7 @@ from ai_watch.config import Settings, SourceConfig
 from ai_watch.pipeline import STAGES, run_nightly, today_jst
 from ai_watch.seen import SeenStore
 from ai_watch.vault import Vault
+from ai_watch.watchlist import WatchedTool
 
 REPO_ROOT = Path(__file__).resolve().parents[1]   # prompts/ schemas/ は本物を使う
 RSS = b"""<rss version="2.0"><channel><title>t</title>
@@ -36,6 +37,16 @@ class FakeRunner:
                   "signals": {"attention": 1, "tryability": 2, "jp_gap": 1, "relevance": 2},
                   "reason": "テスト", "try_plan": "やる", "article_angle": "角度"} for n, i in enumerate(ids)]
         return ClaudeResult(True, {"items": items}, 0.11, "success")
+
+
+class CaptureRunner(FakeRunner):
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def run(self, prompt, schema, **kwargs):
+        self.prompts.append(prompt)
+        return super().run(prompt, schema, **kwargs)
 
 
 def _settings(tmp_path: Path) -> Settings:
@@ -67,6 +78,9 @@ def test_nightly_end_to_end(tmp_path):
     assert r.warnings and r.warnings[0].startswith("bad:")
     md = v.read_digest(DAY)
     assert md and "- [ ] 🧪 **Claude Code hooks**" in md and "  - 試し方: やる" in md
+    digest_json = json.loads(v.digest_path(DAY).with_suffix(".json").read_text(encoding="utf-8"))
+    assert digest_json["date"] == DAY.isoformat()
+    assert digest_json["items_shown"] == r.shown
     assert "> ⚠ 取得失敗: bad:" in md
     assert (s.data_dir / "work" / "2026-08-23" / "triage.json").exists()
     assert (s.data_dir / "raw" / "2026-08-23" / "feed.json").exists()
@@ -79,6 +93,37 @@ def test_nightly_end_to_end(tmp_path):
     r2 = run_nightly(s, date(2026, 8, 24), now=NOW, runner=runner, http=_http(), notifier=lambda t, m: None)
     assert r2.new == 0 and runner.calls == 1
     assert "新着はありませんでした" in v.read_digest(date(2026, 8, 24))
+
+
+def test_nightly_can_skip_x_collect_and_saves_empty_stage(tmp_path):
+    settings = _settings(tmp_path)
+    settings.sources.append(
+        SourceConfig(
+            id="x",
+            type="x_mcp",
+            group="x",
+            params={"urls": ["https://x.example.invalid/bookmarks"]},
+        )
+    )
+
+    report = run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        dry_run=True,
+        skip_x_collect=True,
+        runner=FakeRunner(),
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+
+    stage = json.loads(
+        (settings.data_dir / "work" / DAY.isoformat() / "x_collect.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert stage == {"items": [], "warnings": [], "counts": {}}
+    assert report.collected == 2
 
 
 def test_rerun_from_render_uses_work_files(tmp_path):
@@ -96,6 +141,7 @@ def test_dry_run_touches_nothing_in_vault(tmp_path):
     r = run_nightly(s, DAY, dry_run=True, now=NOW, runner=FakeRunner(), http=_http(), notifier=lambda t, m: None)
     assert not (s.vault_dir / "digests").exists() and not (s.vault_dir / "log.md").exists()
     assert Path(r.digest_path) == s.data_dir / "work" / "2026-08-23" / "digest.md" and Path(r.digest_path).exists()
+    assert Path(r.digest_path).with_suffix(".json").exists()
     assert not (s.data_dir / "seen.sqlite").exists()
 
 
@@ -117,6 +163,47 @@ def test_sync_decisions_runs_before_triage(tmp_path):
     assert r.decisions_added == 1
     assert "^aw-00000001" in v.backlog.read_text()
     assert json.loads((s.data_dir / "decisions.jsonl").read_text().splitlines()[0])["decision"] == "try"
+
+
+def test_worker_checks_are_applied_before_decision_sync(tmp_path):
+    settings = _settings(tmp_path)
+    settings.checks_dir = tmp_path / "checks"
+    vault = Vault(settings.vault_dir)
+    vault.write_atomic(vault.backlog, "# Backlog\n\n## 候補\n")
+    previous = date(2026, 8, 22)
+    vault.write_atomic(
+        vault.digest_path(previous),
+        "- [ ] 🧪 **架空候補** — 理由 ([sample](https://example.com/item)) ^aw-00000001\n",
+    )
+    settings.checks_dir.mkdir(parents=True)
+    (settings.checks_dir / f"{previous.isoformat()}.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "aw-00000001",
+                "category": "try",
+                "checked": True,
+                "timestamp": "2026-08-22T22:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        runner=FakeRunner(),
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+
+    assert "^aw-00000001" in vault.backlog.read_text(encoding="utf-8")
+    decision = json.loads(
+        (settings.data_dir / "decisions.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert decision["id"] == "aw-00000001"
+    assert decision["decision"] == "try"
 
 
 def test_rerun_preserves_checked_boxes(tmp_path):
@@ -217,3 +304,47 @@ def test_render_failure_notifies_and_logs(tmp_path, monkeypatch):
     assert notes == ["2026-08-23: FAILED RuntimeError: boom"]
     assert v.read_digest(DAY) is None
     assert "FAILED: RuntimeError: boom" in v.log.read_text().rstrip().splitlines()[-1]
+
+
+def test_watchlist_augments_prompt_without_editing_profile(tmp_path):
+    settings = _settings(tmp_path)
+    settings.watchlist = [
+        WatchedTool("example-tool", "サンプルツール", True, ("サンプルの更新",), ()),
+    ]
+    vault = Vault(settings.vault_dir)
+    vault.write_atomic(vault.profile, "元の関心\n")
+    runner = CaptureRunner()
+
+    run_nightly(
+        settings, DAY, now=NOW, dry_run=True, runner=runner,
+        http=_http(), notifier=lambda *args: None,
+    )
+
+    assert "サンプルツール" in runner.prompts[0]
+    assert "サンプルの更新" in runner.prompts[0]
+    assert vault.profile.read_text(encoding="utf-8") == "元の関心\n"
+
+
+def test_rerun_from_triage_uses_new_watchlist_but_render_does_not_retriage(tmp_path):
+    settings = _settings(tmp_path)
+    runner = CaptureRunner()
+    run_nightly(
+        settings, DAY, now=NOW, dry_run=True, runner=runner,
+        http=_http(), notifier=lambda *args: None,
+    )
+    settings.watchlist = [
+        WatchedTool("new-tool", "新しい関心", True, ("新しい更新",), ()),
+    ]
+
+    run_nightly(
+        settings, DAY, from_stage="triage", now=NOW, dry_run=True,
+        runner=runner, http=None, notifier=lambda *args: None,
+    )
+    assert len(runner.prompts) == 2
+    assert "新しい関心" in runner.prompts[1]
+
+    run_nightly(
+        settings, DAY, from_stage="render", now=NOW, dry_run=True,
+        runner=runner, http=None, notifier=lambda *args: None,
+    )
+    assert len(runner.prompts) == 2

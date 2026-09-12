@@ -1,10 +1,13 @@
+import json
 import re
 from datetime import date, datetime, timezone
+from pathlib import Path
 
+import jsonschema
 import yaml
 
 from ai_watch.models import Item, TriagedItem
-from ai_watch.render import Limits, render_digest, shown_item_ids
+from ai_watch.render import Limits, render_digest, render_digest_data, shown_item_ids
 from ai_watch.triage import TriageOutcome
 
 
@@ -51,6 +54,93 @@ def test_sections_limits_and_line_format():
     assert "Title 11" not in md                                              # noise は出さない
     assert shown_item_ids(md) == {f"aw-{n:08d}" for n in range(1, 11)}
     assert "items_shown: 10" in md
+
+
+def test_digest_json_matches_markdown_selection_and_schema():
+    items = {f"aw-{n:08d}": _item(f"aw-{n:08d}", f"Title {n}") for n in range(1, 12)}
+    items["aw-00000001"] = _item(
+        "aw-00000001", "Try one", mentions=("hn", "community")
+    )
+    triaged = [
+        _t("aw-00000001", "try", 95, "一番", "1. 試す\n2. 比較する", "比較記事"),
+        _t("aw-00000002", "try", 90),
+        _t("aw-00000003", "try", 85),
+        _t("aw-00000004", "try", 80),
+        _t("aw-00000005", "update", 70),
+        _t("aw-00000006", "update", 60),
+        _t("aw-00000007", "read", 50),
+        _t("aw-00000008", "read", 40),
+        _t("aw-00000009", "read", 30),
+        _t("aw-00000010", "read", 20),
+        _t("aw-00000011", "noise", 0),
+    ]
+    triaged[4].summary = "- 追加された機能\n- 移行時の注意"
+    outcome = TriageOutcome("triaged", triaged, 0.12)
+
+    md = render_digest(
+        date(2026, 8, 22), items, outcome, ["sample: 403"], total_collected=184
+    )
+    data = render_digest_data(
+        date(2026, 8, 22), items, outcome, ["sample: 403"], total_collected=184
+    )
+
+    schema = json.loads(
+        (Path(__file__).resolve().parents[1] / "schemas" / "digest.schema.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    jsonschema.validate(data, schema)
+    json_ids = {
+        item["id"]
+        for section in data["sections"].values()
+        for item in section
+    }
+    assert json_ids == shown_item_ids(md)
+    assert data["items_shown"] == len(json_ids) == 10
+    assert data["sections"]["try"][0]["try_plan"] == "1. 試す / 2. 比較する"
+    assert data["sections"]["try"][0]["article_angle"] == "比較記事"
+    assert data["sections"]["update"][0]["summary"] == [
+        "追加された機能",
+        "移行時の注意",
+    ]
+    assert data["sections"]["try"][0]["mentions"] == ["hn", "community"]
+
+
+def test_untriaged_digest_json_keeps_ranked_selection():
+    items = {
+        "aw-0000000a": _item("aw-0000000a", "hot", metrics={"points": 300}),
+        "aw-0000000b": _item("aw-0000000b", "warm"),
+    }
+    outcome = TriageOutcome(
+        "untriaged",
+        [
+            _t("aw-0000000a", "read", 60, "未トリアージ（metrics 順）"),
+            _t("aw-0000000b", "read", 10, "未トリアージ（metrics 順）"),
+        ],
+        0.5,
+        "budget",
+    )
+
+    data = render_digest_data(
+        date(2026, 8, 22), items, outcome, [], total_collected=2
+    )
+    md = render_digest(
+        date(2026, 8, 22), items, outcome, [], total_collected=2
+    )
+
+    assert data["mode"] == "untriaged"
+    assert [item["id"] for item in data["sections"]["try"]] == [
+        "aw-0000000a",
+        "aw-0000000b",
+    ]
+    assert data["sections"]["update"] == []
+    assert data["sections"]["read"] == []
+    assert data["sections"]["overflow"] == []
+    assert {
+        item["id"]
+        for section in data["sections"].values()
+        for item in section
+    } == shown_item_ids(md)
 
 
 def test_read_section_empty_shows_placeholder():

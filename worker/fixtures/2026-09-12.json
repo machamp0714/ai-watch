@@ -1,0 +1,102 @@
+{
+  "date": "2026-09-12",
+  "mode": "triaged",
+  "items_total": 42,
+  "items_shown": 6,
+  "cost_usd": 0.12,
+  "warnings": [],
+  "sections": {
+    "try": [
+      {
+        "id": "aw-00000001",
+        "title": "架空CLIの設定検証を小さなコマンドへ分離する",
+        "url": "https://example.com/cli-validation",
+        "source": "sample-blog",
+        "mentions": ["sample-blog", "sample-community"],
+        "lang": "ja",
+        "score": 95,
+        "reason": "既存処理へ組み込む前に、再現可能なfixtureで挙動を確かめられる。",
+        "summary": ["検証処理を独立させる設計"],
+        "try_plan": "空の設定と不正な設定を用意し、終了コードと出力を比較する。",
+        "article_angle": "小さな検証境界が運用時の調査をどう短くするか。",
+        "published_at": "2026-09-11T20:00:00+00:00"
+      },
+      {
+        "id": "aw-00000002",
+        "title": "テスト用エージェントの失敗を分類してみる",
+        "url": "https://example.com/agent-failures",
+        "source": "sample-community",
+        "mentions": ["sample-community"],
+        "lang": "ja",
+        "score": 88,
+        "reason": "少量の架空ログだけで分類手順を試せる。",
+        "summary": ["失敗分類の手順"],
+        "try_plan": "10件の架空ログを3種類へ分類する。",
+        "article_angle": "分類粒度を決めるときの判断基準。",
+        "published_at": null
+      }
+    ],
+    "update": [
+      {
+        "id": "aw-00000003",
+        "title": "架空API 2.0が公開",
+        "url": "https://example.com/api-2",
+        "source": "sample-release",
+        "mentions": ["sample-release"],
+        "lang": "ja",
+        "score": 80,
+        "reason": "公式更新",
+        "summary": ["条件付き更新を追加", "旧形式との互換性を維持"],
+        "try_plan": "",
+        "article_angle": "",
+        "published_at": "2026-09-11T18:00:00+00:00"
+      }
+    ],
+    "read": [
+      {
+        "id": "aw-00000004",
+        "title": "小さな自動化を安全に運用するための設計ノート",
+        "url": "https://example.com/safe-automation",
+        "source": "sample-journal",
+        "mentions": ["sample-journal"],
+        "lang": "ja",
+        "score": 72,
+        "reason": "運用境界を整理している。",
+        "summary": ["権限と失敗時の戻し方を先に決める"],
+        "try_plan": "",
+        "article_angle": "",
+        "published_at": null
+      }
+    ],
+    "overflow": [
+      {
+        "id": "aw-00000005",
+        "title": "架空の開発ツール週間まとめ",
+        "url": "https://example.com/weekly",
+        "source": "sample-weekly",
+        "mentions": ["sample-weekly"],
+        "lang": "ja",
+        "score": 60,
+        "reason": "関連する話題。",
+        "summary": ["今週の更新を短く整理"],
+        "try_plan": "",
+        "article_angle": "",
+        "published_at": null
+      },
+      {
+        "id": "aw-00000006",
+        "title": "fixture設計の基本",
+        "url": "https://example.com/fixtures",
+        "source": "sample-guide",
+        "mentions": ["sample-guide"],
+        "lang": "ja",
+        "score": 55,
+        "reason": "再利用できる例がある。",
+        "summary": ["公開可能な架空データを使う"],
+        "try_plan": "",
+        "article_angle": "",
+        "published_at": null
+      }
+    ]
+  }
+}

@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 from .adapters import ADAPTERS, FetchContext, TimeWindow
 from .config import Settings, SourceConfig
 from .models import RawItem, raw_to_dict
+from .watchlist import source_is_enabled
 
 SAME_HOST_DELAY_S = 2.0
 
@@ -74,6 +75,7 @@ def collect(
         s for s in settings.sources
         if (types is None or s.type in types) and s.type not in exclude_types
         and (only_ids is None or s.id in only_ids)
+        and source_is_enabled(s.id, settings.watchlist)
     ]
     groups: dict[str, list[SourceConfig]] = {}
     for cfg in targets:

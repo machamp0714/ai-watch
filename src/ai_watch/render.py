@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date
+from typing import Any
 
 from .models import Item, TriagedItem
 from .triage import TriageOutcome
@@ -17,6 +18,14 @@ class Limits:
     try_: int = 3
     read: int = 3
     update: int = 5
+
+
+@dataclass(frozen=True)
+class DigestSelection:
+    try_: list[tuple[Item, TriagedItem]]
+    update: list[tuple[Item, TriagedItem]]
+    read: list[tuple[Item, TriagedItem]]
+    overflow: list[tuple[Item, TriagedItem]]
 
 
 def _clean(s: str) -> str:
@@ -99,11 +108,95 @@ def _frontmatter(day: date, mode: str, total: int, shown: int, cost: float, warn
     return "\n".join(lines)
 
 
+def _select_digest(
+    items: dict[str, Item], outcome: TriageOutcome, limits: Limits
+) -> DigestSelection:
+    ranked = sorted(
+        (t for t in outcome.triaged if t.id in items),
+        key=lambda t: t.score,
+        reverse=True,
+    )
+    if outcome.mode == "untriaged":
+        return DigestSelection(
+            try_=[(items[t.id], t) for t in ranked[:15]],
+            update=[],
+            read=[],
+            overflow=[(items[t.id], t) for t in ranked[15:]],
+        )
+
+    by_cat: dict[str, list[TriagedItem]] = {"try": [], "update": [], "read": []}
+    for triaged in ranked:
+        if triaged.category in by_cat:
+            by_cat[triaged.category].append(triaged)
+    overflow = sorted(
+        by_cat["try"][limits.try_:]
+        + by_cat["update"][limits.update:]
+        + by_cat["read"][limits.read:],
+        key=lambda triaged: triaged.score,
+        reverse=True,
+    )
+    return DigestSelection(
+        try_=[(items[t.id], t) for t in by_cat["try"][:limits.try_]],
+        update=[(items[t.id], t) for t in by_cat["update"][:limits.update]],
+        read=[(items[t.id], t) for t in by_cat["read"][:limits.read]],
+        overflow=[(items[t.id], t) for t in overflow],
+    )
+
+
+def _digest_item(item: Item, triaged: TriagedItem) -> dict[str, Any]:
+    return {
+        "id": item.id,
+        "title": item.title.strip() or "(no title)",
+        "url": item.url,
+        "source": item.source,
+        "mentions": list(item.mentions),
+        "lang": item.lang,
+        "score": triaged.score,
+        "reason": _clean(triaged.reason),
+        "summary": _summary_lines(triaged),
+        "try_plan": _clean(_one_line(triaged.try_plan)),
+        "article_angle": _clean(_one_line(triaged.article_angle)),
+        "published_at": item.published_at.isoformat() if item.published_at else None,
+    }
+
+
+def render_digest_data(
+    day: date,
+    items: dict[str, Item],
+    outcome: TriageOutcome,
+    warnings: list[str],
+    *,
+    total_collected: int,
+    limits: Limits = Limits(),
+) -> dict[str, Any]:
+    selection = _select_digest(items, outcome, limits)
+    sections = {
+        "try": [_digest_item(item, triaged) for item, triaged in selection.try_],
+        "update": [
+            _digest_item(item, triaged) for item, triaged in selection.update
+        ],
+        "read": [_digest_item(item, triaged) for item, triaged in selection.read],
+        "overflow": [
+            _digest_item(item, triaged) for item, triaged in selection.overflow
+        ],
+    }
+    shown = {item["id"] for section in sections.values() for item in section}
+    return {
+        "date": day.isoformat(),
+        "mode": outcome.mode,
+        "items_total": total_collected,
+        "items_shown": len(shown),
+        "cost_usd": outcome.cost_usd,
+        "warnings": [_clean_warning(warning) for warning in warnings],
+        "sections": sections,
+    }
+
+
 def render_digest(
     day: date, items: dict[str, Item], outcome: TriageOutcome, warnings: list[str], *,
     total_collected: int, limits: Limits = Limits(),
 ) -> str:
-    ranked = sorted((t for t in outcome.triaged if t.id in items), key=lambda t: t.score, reverse=True)
+    selection = _select_digest(items, outcome, limits)
     body: list[str] = [f"# AI Watch {day.isoformat()}", ""]
     if warnings:
         body += [f"> ⚠ 取得失敗: {_clean_warning(w)}" for w in warnings] + [""]
@@ -111,36 +204,26 @@ def render_digest(
     if outcome.mode == "untriaged":
         body += [f"> ⚠ トリアージ失敗（{_clean_warning(outcome.error)}）。metrics 順の生リストです。", "",
                  "## ⚠ 未トリアージ（metrics 順）"]
-        head, tail = ranked[:15], ranked[15:]
-        for t in head:
-            body += _try_lines(items[t.id], t)
-        overflow = tail
+        for item, triaged in selection.try_:
+            body += _try_lines(item, triaged)
     else:
-        by_cat: dict[str, list[TriagedItem]] = {"try": [], "update": [], "read": []}
-        for t in ranked:
-            if t.category in by_cat:
-                by_cat[t.category].append(t)
-        overflow = sorted(by_cat["try"][limits.try_:] + by_cat["update"][limits.update:] + by_cat["read"][limits.read:],
-                          key=lambda t: t.score, reverse=True)
-
-        if not any(by_cat.values()):
+        if not any((selection.try_, selection.update, selection.read)):
             body += ["新着はありませんでした。", ""]
         body += ["## 🧪 試す候補（[x] で backlog へ）"]
-        for t in by_cat["try"][:limits.try_]:
-            body += _try_lines(items[t.id], t)
+        for item, triaged in selection.try_:
+            body += _try_lines(item, triaged)
         body += ["", "## 📣 公式アップデート（[x] で X 投稿待ちへ）"]
-        updates = by_cat["update"][:limits.update]
-        if updates:
-            for t in updates:
-                body += _update_lines(items[t.id], t)
+        if selection.update:
+            for item, triaged in selection.update:
+                body += _update_lines(item, triaged)
         else:
             body += ["（なし。新しい公式リリースはありませんでした）"]
         body += ["", "## 📖 読む", ""]
-        body += _table([(items[t.id], t) for t in by_cat["read"][:limits.read]])
+        body += _table(selection.read)
 
-    if overflow:
-        body += ["", f"## 👀 注目（{len(overflow)} 件）", ""]
-        body += _table([(items[t.id], t) for t in overflow])
+    if selection.overflow:
+        body += ["", f"## 👀 注目（{len(selection.overflow)} 件）", ""]
+        body += _table(selection.overflow)
 
     text = "\n".join(body).rstrip() + "\n"
     shown = len(shown_item_ids(text))

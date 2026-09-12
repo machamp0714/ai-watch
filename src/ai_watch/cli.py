@@ -15,6 +15,7 @@ from .decisions import DecisionStore, sync_decisions
 from .doctor import cmd_doctor
 from .pipeline import STAGES, run_nightly, today_jst
 from .vault import Vault, init_vault
+from .watchlist import WatchlistError, watchlist_rows
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,7 +37,13 @@ def cmd_nightly(settings: Settings, args: argparse.Namespace) -> int:
     if args.from_stage not in STAGES:
         print(f"unknown stage '{args.from_stage}'. choose from: {', '.join(STAGES)}", file=sys.stderr)
         return 2
-    report = run_nightly(settings, _day(args.date), from_stage=args.from_stage, dry_run=args.dry_run)
+    report = run_nightly(
+        settings,
+        _day(args.date),
+        from_stage=args.from_stage,
+        dry_run=args.dry_run,
+        skip_x_collect=args.skip_x_collect,
+    )
     print(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
     return 0
 
@@ -77,6 +84,11 @@ def cmd_init_vault(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_watchlist(settings: Settings, args: argparse.Namespace) -> int:
+    print(json.dumps(watchlist_rows(settings.watchlist), ensure_ascii=False, indent=1))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="ai-watch", description="LLM 情報の夜間収集・トリアージ・ダイジェスト生成")
     p.add_argument("--config", type=Path, default=None, help="sources.yaml のパス（既定: $AI_WATCH_CONFIG → リポジトリ直下）")
@@ -86,6 +98,7 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--date", help="YYYY-MM-DD（既定: 今日 JST）")
     n.add_argument("--from", dest="from_stage", default="collect", help=f"途中から再実行: {', '.join(STAGES)}")
     n.add_argument("--dry-run", action="store_true", help="vault に書かず data/work/ にダイジェストを出す")
+    n.add_argument("--skip-x-collect", action="store_true", help="X収集を行わず空の段階結果を保存")
     n.set_defaults(func=cmd_nightly)
 
     c = sub.add_parser("collect", help="X 以外のソースを取得して件数と失敗を表示")
@@ -99,14 +112,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("sync", help="ダイジェストのチェックを今すぐ backlog / outputs に反映").set_defaults(func=cmd_sync)
     sub.add_parser("init-vault", help="vault に初期ファイルを作る（既存は触らない）").set_defaults(func=cmd_init_vault)
-    sub.add_parser("doctor", help="実行環境の事前チェック").set_defaults(func=cmd_doctor)
+    doctor = sub.add_parser("doctor", help="実行環境の事前チェック")
+    doctor.add_argument("--ci", action="store_true", help="GitHub Actions向けにX関連を省略して確認")
+    doctor.set_defaults(func=cmd_doctor)
+    sub.add_parser("watchlist", help="監視対象と設定状態を確認").set_defaults(func=cmd_watchlist)
     return p
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
-    settings = load_settings(args.config or default_config())
+    try:
+        settings = load_settings(args.config or default_config())
+    except WatchlistError as exc:
+        print(f"設定エラー: {exc}", file=sys.stderr)
+        return 2
     return int(args.func(settings, args))
 
 
