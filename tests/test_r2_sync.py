@@ -12,6 +12,8 @@ from ai_watch.r2_sync import (
     R2SyncError,
     _pull_watchlist,
     create_watchlist,
+    pull,
+    push_results,
     update_watchlist,
 )
 
@@ -359,3 +361,129 @@ def test_watchlist_operations_reject_missing_response_etag(tmp_path, payload):
             sources,
             make_aws(json_runner([], payload)),
         )
+
+
+def make_runtime_tree(tmp_path):
+    root = tmp_path / "runtime"
+    (root / "vault").mkdir(parents=True)
+    (root / "data/work/2026-09-12").mkdir(parents=True)
+    (root / "data/seen.sqlite").write_bytes(b"seen")
+    (root / "data/decisions.jsonl").write_text("", encoding="utf-8")
+    return root
+
+
+def success_runner(calls):
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        return completed(argv)
+
+    return runner
+
+
+def include_values(argv):
+    return [
+        argv[index + 1]
+        for index, value in enumerate(argv)
+        if value == "--include"
+    ]
+
+
+def test_push_results_can_only_sync_vault_and_allowed_data(tmp_path):
+    root = make_runtime_tree(tmp_path)
+    calls = []
+    push_results(root, make_aws(success_runner(calls)))
+
+    assert len(calls) == 2
+    vault, data = calls
+    joined = "\n".join(" ".join(call) for call in calls)
+    assert "s3://example-private-bucket/vault/" in " ".join(vault)
+    assert "s3://example-private-bucket/data/" in " ".join(data)
+    assert data[data.index("--exclude") + 1] == "*"
+    assert include_values(data) == ["seen.sqlite", "decisions.jsonl", "work/*"]
+    assert "--no-follow-symlinks" in vault
+    assert "--no-follow-symlinks" in data
+    assert "--delete" not in joined
+    assert "config/" not in joined
+    assert "raw/" not in joined
+    assert "playwright-profile/" not in joined
+
+
+def test_pull_syncs_results_only_after_watchlist_is_replaced(tmp_path):
+    root = tmp_path / "runtime"
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        if "head-object" in argv:
+            return completed(argv, stdout='{"ETag":"\\"etag-a\\""}')
+        if "get-object" in argv:
+            Path(argv[-1]).write_text("version: 1\ntools: []\n", encoding="utf-8")
+        return completed(argv, stdout="{}")
+
+    pull(root, make_aws(runner))
+
+    assert len(calls) == 4
+    assert "head-object" in calls[0]
+    assert "get-object" in calls[1]
+    assert calls[2][calls[2].index("s3") + 1] == "sync"
+    assert calls[3][calls[3].index("s3") + 1] == "sync"
+    assert "s3://example-private-bucket/vault/" in calls[2]
+    assert "s3://example-private-bucket/data/" in calls[3]
+    assert include_values(calls[3]) == ["seen.sqlite", "decisions.jsonl", "work/*"]
+    assert "--delete" not in " ".join(" ".join(call) for call in calls)
+
+
+def test_pull_stops_before_result_sync_when_watchlist_head_fails(tmp_path):
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        if "head-object" in argv:
+            return completed(
+                argv,
+                returncode=255,
+                stderr="An error occurred (NoSuchKey) when calling HeadObject",
+            )
+        raise AssertionError("設定確認の失敗後に後続処理へ進んではいけません")
+
+    with pytest.raises(R2SyncError):
+        pull(tmp_path / "runtime", make_aws(runner))
+    assert len(calls) == 1
+
+
+def test_push_stops_after_vault_failure_and_keeps_local_files(tmp_path):
+    root = make_runtime_tree(tmp_path)
+    config = root / "config/watchlist.yaml"
+    config.parent.mkdir()
+    config.write_text("private-local", encoding="utf-8")
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        return completed(
+            argv,
+            returncode=255,
+            stderr="An error occurred (AccessDenied) when calling sync",
+        )
+
+    with pytest.raises(R2SyncError):
+        push_results(root, make_aws(runner))
+    assert len(calls) == 1
+    assert (root / "data/seen.sqlite").read_bytes() == b"seen"
+    assert config.read_text(encoding="utf-8") == "private-local"
+
+
+@pytest.mark.parametrize("missing", ["vault", "data"])
+def test_push_requires_both_local_result_directories_before_aws_call(
+    tmp_path, missing,
+):
+    root = make_runtime_tree(tmp_path)
+    target = root / missing
+    if target.is_dir():
+        for child in sorted(target.rglob("*"), reverse=True):
+            child.unlink() if child.is_file() else child.rmdir()
+        target.rmdir()
+    calls = []
+    with pytest.raises(R2InputError, match=missing):
+        push_results(root, make_aws(success_runner(calls)))
+    assert calls == []

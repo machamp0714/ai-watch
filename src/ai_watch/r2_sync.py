@@ -43,6 +43,16 @@ _ALLOWED_AWS_ERRORS = (
 WATCHLIST_KEY = "config/watchlist.yaml"
 WATCHLIST_PATH = Path("config/watchlist.yaml")
 ETAG_STATE_PATH = Path(".r2-state/watchlist-etag")
+DATA_FILTER_ARGS = (
+    "--exclude",
+    "*",
+    "--include",
+    "seen.sqlite",
+    "--include",
+    "decisions.jsonl",
+    "--include",
+    "work/*",
+)
 
 
 @dataclass(frozen=True)
@@ -319,4 +329,69 @@ def update_watchlist(
         aws,
         condition_name="--if-match",
         condition_value=etag,
+    )
+
+
+def _sync_args(source: str, destination: str, *, data: bool) -> list[str]:
+    args = ["s3", "sync", source, destination]
+    if data:
+        args.extend(DATA_FILTER_ARGS)
+    args.extend(["--no-follow-symlinks", "--only-show-errors"])
+    return args
+
+
+def _require_directory(path: Path, label: str) -> None:
+    if not path.is_dir():
+        raise R2InputError(f"{label}ディレクトリがありません")
+
+
+def pull(root: Path, aws: AwsCli) -> None:
+    root = Path(root)
+    _pull_watchlist(root, aws)
+    vault = root / "vault"
+    data = root / "data"
+    try:
+        vault.mkdir(parents=True, exist_ok=True)
+        data.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise R2InputError("同期先ディレクトリを作成できません") from exc
+    aws.run(
+        "vaultの取得",
+        _sync_args(
+            f"s3://{aws.config.bucket_name}/vault/",
+            str(vault) + os.sep,
+            data=False,
+        ),
+    )
+    aws.run(
+        "dataの取得",
+        _sync_args(
+            f"s3://{aws.config.bucket_name}/data/",
+            str(data) + os.sep,
+            data=True,
+        ),
+    )
+
+
+def push_results(root: Path, aws: AwsCli) -> None:
+    root = Path(root)
+    vault = root / "vault"
+    data = root / "data"
+    _require_directory(vault, "vault")
+    _require_directory(data, "data")
+    aws.run(
+        "vaultの保存",
+        _sync_args(
+            str(vault) + os.sep,
+            f"s3://{aws.config.bucket_name}/vault/",
+            data=False,
+        ),
+    )
+    aws.run(
+        "dataの保存",
+        _sync_args(
+            str(data) + os.sep,
+            f"s3://{aws.config.bucket_name}/data/",
+            data=True,
+        ),
     )
