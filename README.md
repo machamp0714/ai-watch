@@ -272,12 +272,13 @@ npx wrangler r2 object put ai-watch-prod/vault/digests/2026-09-12.json \
 npm run dev:worker
 ```
 
-`wrangler.jsonc`は初回deploy時の意図しない公開を防ぐため、`workers_dev: false`、`preview_urls: false`にしている。
-本番公開は次の順序を崩さない。
+初回deployでは意図しない公開を防ぐため、`workers_dev: false`、`preview_urls: false`でWorkerだけを作成した。
+Worker単位のAccess保護を適用した現在は、`workers_dev: true`、`preview_urls: false`としている。
+初回公開では次の順序を崩さない。
 
-1. `npm run deploy:worker`でrouteを持たないWorkerを作成する。
+1. `workers_dev: false`の状態で`npm run deploy:worker`を実行し、routeを持たないWorkerを作成する。
 2. Cloudflare DashboardのWorkers & Pagesから`ai-watch`を開き、Accessで「Protect this Worker behind Access」と「All traffic」を選ぶ。
-3. 本人のメールアドレスだけをAllowするpolicyを設定する。
+3. 本人だけが所属するCloudflareアカウントのメンバーをAllowするpolicyを設定する。
 4. Access保護後に`workers.dev` routeを有効化し、`wrangler.jsonc`の`workers_dev`も`true`へ更新する。
 5. シークレットウィンドウで未認証時のログインredirectと、認証後の一覧・日付・チェック保存を確認する。
 
