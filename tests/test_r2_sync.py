@@ -1,4 +1,6 @@
+import json
 import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -8,6 +10,9 @@ from ai_watch.r2_sync import (
     R2ConflictError,
     R2InputError,
     R2SyncError,
+    _pull_watchlist,
+    create_watchlist,
+    update_watchlist,
 )
 
 
@@ -166,3 +171,191 @@ def test_invalid_json_success_is_sync_error_without_body():
     message = str(captured.value)
     assert "private-interest" not in message
     assert "test-secret-marker" not in message
+
+
+def test_pull_watchlist_uses_head_etag_and_replaces_atomically(tmp_path):
+    root = tmp_path / "runtime"
+    target = root / "config/watchlist.yaml"
+    target.parent.mkdir(parents=True)
+    target.write_text("old-local", encoding="utf-8")
+    calls = []
+
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        if "head-object" in argv:
+            return completed(argv, stdout='{"ETag":"\\"etag-a\\""}')
+        if "get-object" in argv:
+            assert argv[argv.index("--if-match") + 1] == '"etag-a"'
+            output = Path(argv[-1])
+            assert output != target and output.parent == target.parent
+            output.write_text("version: 1\ntools: []\n", encoding="utf-8")
+            return completed(argv, stdout="{}")
+        raise AssertionError("想定外のAWS操作です")
+
+    _pull_watchlist(root, make_aws(runner))
+
+    assert ["head-object" in call for call in calls] == [True, False]
+    assert "get-object" in calls[1]
+    assert target.read_text(encoding="utf-8") == "version: 1\ntools: []\n"
+    assert (root / ".r2-state/watchlist-etag").read_text(encoding="utf-8") == '"etag-a"\n'
+
+
+def test_pull_watchlist_failure_keeps_existing_file_and_state(tmp_path):
+    root = tmp_path / "runtime"
+    target = root / "config/watchlist.yaml"
+    state = root / ".r2-state/watchlist-etag"
+    target.parent.mkdir(parents=True)
+    state.parent.mkdir(parents=True)
+    target.write_text("old-local", encoding="utf-8")
+    state.write_text('"etag-old"\n', encoding="utf-8")
+
+    def runner(argv, **kwargs):
+        if "head-object" in argv:
+            return completed(argv, stdout='{"ETag":"\\"etag-a\\""}')
+        if "get-object" in argv:
+            Path(argv[-1]).write_text("partial-private", encoding="utf-8")
+            return completed(
+                argv,
+                returncode=255,
+                stderr="AccessDenied partial-private test-secret-marker",
+            )
+        raise AssertionError("設定取得失敗後に別のAWS操作へ進んではいけません")
+
+    with pytest.raises(R2SyncError):
+        _pull_watchlist(root, make_aws(runner))
+
+    assert target.read_text(encoding="utf-8") == "old-local"
+    assert state.read_text(encoding="utf-8") == '"etag-old"\n'
+    assert list(target.parent.glob(".watchlist.yaml.*")) == []
+
+
+def write_example_watchlist_and_sources(tmp_path):
+    sources = tmp_path / "sources.yaml"
+    sources.write_text(
+        "sources:\n  - id: example-feed\n    type: rss\n",
+        encoding="utf-8",
+    )
+    watchlist = tmp_path / "watchlist.yaml"
+    watchlist.write_text(
+        "version: 1\ntools:\n"
+        "  - id: example-tool\n"
+        "    name: サンプル対象\n"
+        "    enabled: true\n"
+        "    focus: [サンプル更新]\n"
+        "    source_ids: [example-feed]\n",
+        encoding="utf-8",
+    )
+    return watchlist, sources
+
+
+def json_runner(calls, payload):
+    def runner(argv, **kwargs):
+        calls.append(argv)
+        return completed(argv, stdout=json.dumps(payload))
+
+    return runner
+
+
+def write_etag(root, value):
+    state = root / ".r2-state/watchlist-etag"
+    state.parent.mkdir(parents=True)
+    state.write_text(value + "\n", encoding="utf-8")
+
+
+def test_create_watchlist_uses_if_none_match_and_saves_returned_etag(tmp_path):
+    watchlist, sources = write_example_watchlist_and_sources(tmp_path)
+    calls = []
+    aws = make_aws(json_runner(calls, {"ETag": '"etag-created"'}))
+
+    create_watchlist(tmp_path / "runtime", watchlist, sources, aws)
+
+    argv = calls[0]
+    assert argv[argv.index("--if-none-match") + 1] == "*"
+    assert argv[argv.index("--body") + 1] == str(watchlist)
+    assert (
+        tmp_path / "runtime/.r2-state/watchlist-etag"
+    ).read_text(encoding="utf-8").strip() == '"etag-created"'
+
+
+def test_update_watchlist_uses_saved_if_match(tmp_path):
+    root = tmp_path / "runtime"
+    write_etag(root, '"etag-old"')
+    watchlist, sources = write_example_watchlist_and_sources(tmp_path)
+    calls = []
+
+    update_watchlist(
+        root,
+        watchlist,
+        sources,
+        make_aws(json_runner(calls, {"ETag": '"etag-new"'})),
+    )
+
+    argv = calls[0]
+    assert argv[argv.index("--if-match") + 1] == '"etag-old"'
+    assert "--if-none-match" not in argv
+    assert (root / ".r2-state/watchlist-etag").read_text().strip() == '"etag-new"'
+
+
+def test_update_watchlist_requires_saved_etag_before_aws_call(tmp_path):
+    watchlist, sources = write_example_watchlist_and_sources(tmp_path)
+    calls = []
+    with pytest.raises(R2InputError, match="pull"):
+        update_watchlist(
+            tmp_path / "runtime",
+            watchlist,
+            sources,
+            make_aws(json_runner(calls, {"ETag": '"unexpected"'})),
+        )
+    assert calls == []
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "version: 1\ntools: [private-value\n",
+        "version: 1\ntools:\n  - id: example\n    name: Example\n"
+        "    enabled: true\n    focus: []\n    source_ids: [missing]\n",
+    ],
+)
+def test_create_watchlist_validates_before_aws_call(tmp_path, document):
+    watchlist, sources = write_example_watchlist_and_sources(tmp_path)
+    watchlist.write_text(document, encoding="utf-8")
+    calls = []
+    with pytest.raises(R2InputError) as captured:
+        create_watchlist(
+            tmp_path / "runtime",
+            watchlist,
+            sources,
+            make_aws(json_runner(calls, {"ETag": '"unexpected"'})),
+        )
+    assert calls == []
+    assert "private-value" not in str(captured.value)
+
+
+def test_create_watchlist_conflict_does_not_change_saved_etag(tmp_path):
+    root = tmp_path / "runtime"
+    write_etag(root, '"etag-old"')
+    watchlist, sources = write_example_watchlist_and_sources(tmp_path)
+
+    def runner(argv, **kwargs):
+        return completed(
+            argv,
+            returncode=255,
+            stderr="An error occurred (PreconditionFailed) when calling PutObject",
+        )
+
+    with pytest.raises(R2ConflictError):
+        create_watchlist(root, watchlist, sources, make_aws(runner))
+    assert (root / ".r2-state/watchlist-etag").read_text().strip() == '"etag-old"'
+
+
+@pytest.mark.parametrize("payload", [{}, {"ETag": ""}, {"ETag": 123}])
+def test_watchlist_operations_reject_missing_response_etag(tmp_path, payload):
+    watchlist, sources = write_example_watchlist_and_sources(tmp_path)
+    with pytest.raises(R2SyncError, match="ETag"):
+        create_watchlist(
+            tmp_path / "runtime",
+            watchlist,
+            sources,
+            make_aws(json_runner([], payload)),
+        )

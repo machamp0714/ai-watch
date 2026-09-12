@@ -44,6 +44,38 @@ def _path(value: str | None, default: str, base: Path) -> Path:
     return p if p.is_absolute() else (base / p).resolve()
 
 
+def load_source_ids(path: Path) -> set[str]:
+    path = Path(path)
+    try:
+        document = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise WatchlistError(f"収集先設定 {path.name} を読み込めません") from exc
+    try:
+        raw = yaml.safe_load(document) or {}
+    except yaml.YAMLError as exc:
+        mark = getattr(exc, "problem_mark", None)
+        location = f"{mark.line + 1}行目" if mark is not None else "位置不明"
+        raise WatchlistError(
+            f"収集先設定 {path.name} の{location}にYAML構文エラーがあります"
+        ) from exc
+    if not isinstance(raw, dict) or not isinstance(raw.get("sources", []), list):
+        raise WatchlistError("収集先設定のsourcesはリストにしてください")
+    ids: list[str] = []
+    for index, source in enumerate(raw.get("sources", []), start=1):
+        if (
+            not isinstance(source, dict)
+            or not isinstance(source.get("id"), str)
+            or not source["id"].strip()
+        ):
+            raise WatchlistError(
+                f"sources[{index}].idは空白でない文字列にしてください"
+            )
+        ids.append(source["id"])
+    if len(ids) != len(set(ids)):
+        raise WatchlistError("収集先IDが重複しています")
+    return set(ids)
+
+
 def load_settings(path: Path) -> Settings:
     path = Path(path).resolve()
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
