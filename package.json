@@ -1,0 +1,13 @@
+{
+  "name": "ai-watch-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test:worker": "node --test worker/test/*.test.js",
+    "dev:worker": "wrangler dev",
+    "deploy:worker": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": "4.131.1"
+  }
+}

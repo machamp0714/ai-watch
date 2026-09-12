@@ -8,3 +8,5 @@ logs/
 /.private/
 /.wrangler/
 /.r2-state/
+/node_modules/
+/.playwright-cli/

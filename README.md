@@ -159,7 +159,7 @@ R2_BUCKET_NAME
 値はコマンド引数、リポジトリ内の`.env`、公開ログへ書かない。
 同期CLIはR2用の資格情報をAWS CLIの子プロセス環境へだけ渡し、AWS CLIの標準エラーもそのまま表示しない。
 
-通常実行は、最初にruntimeへpullし、その配下を3つの既存環境変数で指定してからnightlyを実行する。
+通常実行は、最初にruntimeへpullし、その配下を4つの既存環境変数で指定してからnightlyを実行する。
 pullが失敗した場合は設定なしや公開サンプルへフォールバックせず、nightlyを開始しない。
 
 ```bash
@@ -167,12 +167,15 @@ uv run ai-watch-r2 pull --root /path/to/runtime
 AI_WATCH_VAULT_DIR=/path/to/runtime/vault \
 AI_WATCH_DATA_DIR=/path/to/runtime/data \
 AI_WATCH_WATCHLIST_FILE=/path/to/runtime/config/watchlist.yaml \
+AI_WATCH_CHECKS_DIR=/path/to/runtime/checks \
   uv run ai-watch nightly
 uv run ai-watch-r2 push-results --root /path/to/runtime
 ```
 
 `vault/`は全体を同期する。
 `data/`は`seen.sqlite`、`decisions.jsonl`、`work/`だけを同期し、`raw/`と`playwright-profile/`は扱わない。
+`checks/`はWorkerが書いた操作記録をpullするだけで、nightlyからpushしない。
+nightlyは操作記録の項目ごとの最終状態を`sync_decisions`より前にMarkdownへ反映し、従来の判断回収経路へ渡す。
 `push-results`には`config/`を送る経路がなく、通常のnightlyが監視設定を上書きすることはない。
 どの同期も`--delete`を使わず、R2またはローカルの片側だけにあるファイルを削除しない。
 
@@ -226,6 +229,39 @@ workflowは公開サンプルへのフォールバックや設定の初回登録
 `.github/workflows/keepalive.yml`は毎月1日に`.github/keepalive`だけを更新し、この停止を防ぐ。
 このjob以外はリポジトリへの書き込み権限を持たない。
 
+## Worker UI
+
+Workerは`AI_WATCH_BUCKET`というR2 bindingから`vault/digests/<date>.json`を読み、`/`に日付一覧、`/<date>`にダイジェストを表示する。
+R2のS3互換アクセスキーをWorkerへ渡す必要はなく、bindingがR2への権限を持つ。
+存在しない日付は500ではなく、再確認と日付一覧への導線を持つ404画面になる。
+
+UIは[`ai-watch.pen`](ai-watch.pen)を正本とし、PCでは日付・カテゴリのsidebarと本文、モバイルでは1カラムと2×2のカテゴリ移動を表示する。
+試す候補と公式アップデートだけがチェック可能で、読む・注目には判断操作を付けない。
+保存中は同じ項目を再操作できず、失敗時は直前状態へ戻して再試行できる。
+チェック解除は保存するが、既に作成済みのbacklogやX投稿待ちは削除しない。
+
+ローカル検証では公開可能な架空fixtureだけをローカルR2へ登録する。
+
+```bash
+npm install
+npm run test:worker
+npx wrangler r2 object put ai-watch-prod/vault/digests/2026-09-12.json \
+  --local --file worker/fixtures/2026-09-12.json --content-type application/json
+npm run dev:worker
+```
+
+`wrangler.jsonc`は初回deploy時の意図しない公開を防ぐため、`workers_dev: false`、`preview_urls: false`にしている。
+本番公開は次の順序を崩さない。
+
+1. `npm run deploy:worker`でrouteを持たないWorkerを作成する。
+2. Cloudflare DashboardのWorkers & Pagesから`ai-watch`を開き、Accessで「Protect this Worker behind Access」と「All traffic」を選ぶ。
+3. 本人のメールアドレスだけをAllowするpolicyを設定する。
+4. Access保護後に`workers.dev` routeを有効化し、`wrangler.jsonc`の`workers_dev`も`true`へ更新する。
+5. シークレットウィンドウで未認証時のログインredirectと、認証後の一覧・日付・チェック保存を確認する。
+
+Accessを設定する前に`workers_dev` routeを有効化しない。
+Worker単位のAccessは`workers.dev`、Custom Domain、previewをまとめて保護できるため、現時点でCustom Domainは必須ではない。
+
 ## 手動実行
 
 ```bash
@@ -256,4 +292,5 @@ tail -f logs/nightly.err.log
 - `data/work/YYYY-MM-DD/*.json` — 段ごとの中間出力（`--from` 再実行用）
 - `data/seen.sqlite` — 機械の既読
 - `data/decisions.jsonl` — 朝のチェック（try / share / skip_implicit）
+- `checks/YYYY-MM-DD.jsonl` — Workerが保存し、nightlyがpullして適用する最終状態の履歴
 - vault `00_Self/ai-watch/` — digests（MarkdownとJSON）/ backlog / outputs / log / profile

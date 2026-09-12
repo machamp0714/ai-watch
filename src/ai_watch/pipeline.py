@@ -8,6 +8,7 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .adapters.base import FetchContext, TimeWindow, make_client
+from .checks import apply_check_events
 from .claude_runner import ClaudeRunner
 from .collect import collect
 from .config import Settings
@@ -131,6 +132,7 @@ def run_nightly(
             if dry_run:
                 added_dicts: list[dict] = []
             else:
+                apply_check_events(vault, settings.checks_dir, day)
                 added_dicts = [d.to_dict() for d in sync_decisions(vault, store, day, apply=True)]
             work.save("sync_decisions", {"added": added_dicts})
         decisions_added = len((work.load("sync_decisions") or {"added": []})["added"])

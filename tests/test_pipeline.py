@@ -165,6 +165,47 @@ def test_sync_decisions_runs_before_triage(tmp_path):
     assert json.loads((s.data_dir / "decisions.jsonl").read_text().splitlines()[0])["decision"] == "try"
 
 
+def test_worker_checks_are_applied_before_decision_sync(tmp_path):
+    settings = _settings(tmp_path)
+    settings.checks_dir = tmp_path / "checks"
+    vault = Vault(settings.vault_dir)
+    vault.write_atomic(vault.backlog, "# Backlog\n\n## 候補\n")
+    previous = date(2026, 8, 22)
+    vault.write_atomic(
+        vault.digest_path(previous),
+        "- [ ] 🧪 **架空候補** — 理由 ([sample](https://example.com/item)) ^aw-00000001\n",
+    )
+    settings.checks_dir.mkdir(parents=True)
+    (settings.checks_dir / f"{previous.isoformat()}.jsonl").write_text(
+        json.dumps(
+            {
+                "id": "aw-00000001",
+                "category": "try",
+                "checked": True,
+                "timestamp": "2026-08-22T22:00:00Z",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        runner=FakeRunner(),
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+
+    assert "^aw-00000001" in vault.backlog.read_text(encoding="utf-8")
+    decision = json.loads(
+        (settings.data_dir / "decisions.jsonl").read_text(encoding="utf-8").splitlines()[0]
+    )
+    assert decision["id"] == "aw-00000001"
+    assert decision["decision"] == "try"
+
+
 def test_rerun_preserves_checked_boxes(tmp_path):
     s = _settings(tmp_path)
     v = Vault(s.vault_dir)

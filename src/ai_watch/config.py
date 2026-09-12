@@ -34,6 +34,7 @@ class Settings:
     sources: list[SourceConfig]
     root: Path  # sources.yaml のあるディレクトリ（prompts/ schemas/ config/ の基準）
     watchlist: list[WatchedTool] = field(default_factory=list)
+    checks_dir: Path = Path("checks")
 
     def source_groups(self) -> dict[str, str]:
         return {s.id: s.group for s in self.sources}
@@ -112,4 +113,9 @@ def load_settings(path: Path) -> Settings:
         sources=sources,
         root=root,
         watchlist=watchlist,
+        checks_dir=_path(
+            os.environ.get("AI_WATCH_CHECKS_DIR") or d.get("checks_dir"),
+            "./checks",
+            root,
+        ),
     )

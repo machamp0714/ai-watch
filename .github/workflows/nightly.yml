@@ -53,6 +53,7 @@ jobs:
           AI_WATCH_VAULT_DIR: ${{ runner.temp }}/ai-watch-runtime/vault
           AI_WATCH_DATA_DIR: ${{ runner.temp }}/ai-watch-runtime/data
           AI_WATCH_WATCHLIST_FILE: ${{ runner.temp }}/ai-watch-runtime/config/watchlist.yaml
+          AI_WATCH_CHECKS_DIR: ${{ runner.temp }}/ai-watch-runtime/checks
         run: uv run ai-watch nightly --skip-x-collect > "$RUNNER_TEMP/nightly-report.json"
       - name: R2へ成果物を保存
         env:

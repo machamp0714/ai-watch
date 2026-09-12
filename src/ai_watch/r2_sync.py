@@ -350,9 +350,11 @@ def pull(root: Path, aws: AwsCli) -> None:
     _pull_watchlist(root, aws)
     vault = root / "vault"
     data = root / "data"
+    checks = root / "checks"
     try:
         vault.mkdir(parents=True, exist_ok=True)
         data.mkdir(parents=True, exist_ok=True)
+        checks.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
         raise R2InputError("同期先ディレクトリを作成できません") from exc
     aws.run(
@@ -369,6 +371,14 @@ def pull(root: Path, aws: AwsCli) -> None:
             f"s3://{aws.config.bucket_name}/data/",
             str(data) + os.sep,
             data=True,
+        ),
+    )
+    aws.run(
+        "チェック記録の取得",
+        _sync_args(
+            f"s3://{aws.config.bucket_name}/checks/",
+            str(checks) + os.sep,
+            data=False,
         ),
     )
 

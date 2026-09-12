@@ -422,15 +422,28 @@ def test_pull_syncs_results_only_after_watchlist_is_replaced(tmp_path):
 
     pull(root, make_aws(runner))
 
-    assert len(calls) == 4
+    assert len(calls) == 5
     assert "head-object" in calls[0]
     assert "get-object" in calls[1]
     assert calls[2][calls[2].index("s3") + 1] == "sync"
     assert calls[3][calls[3].index("s3") + 1] == "sync"
     assert "s3://example-private-bucket/vault/" in calls[2]
     assert "s3://example-private-bucket/data/" in calls[3]
+    assert "s3://example-private-bucket/checks/" in calls[4]
+    assert str(root / "checks") + "/" in calls[4]
     assert include_values(calls[3]) == ["seen.sqlite", "decisions.jsonl", "work/*"]
     assert "--delete" not in " ".join(" ".join(call) for call in calls)
+
+
+def test_push_results_never_writes_worker_checks(tmp_path):
+    root = make_runtime_tree(tmp_path)
+    (root / "checks").mkdir()
+    (root / "checks/2026-09-12.jsonl").write_text("private-check", encoding="utf-8")
+    calls = []
+
+    push_results(root, make_aws(success_runner(calls)))
+
+    assert all("checks" not in " ".join(call) for call in calls)
 
 
 def test_pull_stops_before_result_sync_when_watchlist_head_fails(tmp_path):

@@ -53,9 +53,11 @@ def test_env_override(tmp_path: Path, monkeypatch):
     p.write_text(YAML)
     monkeypatch.setenv("AI_WATCH_VAULT_DIR", str(tmp_path / "v"))
     monkeypatch.setenv("AI_WATCH_DATA_DIR", str(tmp_path / "d"))
+    monkeypatch.setenv("AI_WATCH_CHECKS_DIR", str(tmp_path / "c"))
     s = load_settings(p)
     assert s.vault_dir == tmp_path / "v"
     assert s.data_dir == tmp_path / "d"
+    assert s.checks_dir == tmp_path / "c"
 
 
 def test_watchlist_environment_overrides_config(tmp_path, monkeypatch):
