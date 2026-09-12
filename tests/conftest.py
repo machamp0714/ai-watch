@@ -8,8 +8,23 @@ from ai_watch.adapters.base import FetchContext
 
 @pytest.fixture(autouse=True)
 def _isolate_ai_watch_env(monkeypatch):
-    for k in ("AI_WATCH_VAULT_DIR", "AI_WATCH_DATA_DIR", "AI_WATCH_CONFIG",
-              "AI_WATCH_WATCHLIST_FILE"):
+    for k in (
+        "AI_WATCH_VAULT_DIR",
+        "AI_WATCH_DATA_DIR",
+        "AI_WATCH_CONFIG",
+        "AI_WATCH_WATCHLIST_FILE",
+        "R2_ACCESS_KEY_ID",
+        "R2_SECRET_ACCESS_KEY",
+        "CLOUDFLARE_ACCOUNT_ID",
+        "R2_BUCKET_NAME",
+        "AWS_ACCESS_KEY_ID",
+        "AWS_SECRET_ACCESS_KEY",
+        "AWS_SESSION_TOKEN",
+        "AWS_PROFILE",
+        "FAKE_R2_ROOT",
+        "FAKE_AWS_LOG",
+        "FAKE_AWS_FAIL_OPERATION",
+    ):
         monkeypatch.delenv(k, raising=False)
 
 
