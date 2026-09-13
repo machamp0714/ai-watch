@@ -47,6 +47,25 @@ def test_collect_isolates_failures_filters_window_and_saves_raw(make_ctx, tmp_pa
     assert len(raw) == 3                                                 # raw は window 前の全件
 
 
+def test_popularity_recheck_source_keeps_items_outside_time_window(make_ctx, tmp_path):
+    source = SourceConfig(
+        id="popular",
+        type="rss",
+        group="jp",
+        params={"url": "https://ok/feed", "recheck_popularity": True},
+    )
+
+    result = collect(
+        _settings(tmp_path, [source]),
+        WINDOW,
+        make_ctx(_responder),
+        day=date(2026, 8, 22),
+    )
+
+    assert [item.title for item in result.items] == ["recent", "old", "undated"]
+    assert result.counts == {"popular": 3}
+
+
 def test_collect_only_ids(make_ctx, tmp_path):
     sources = [SourceConfig(id="good", type="rss", group="en", params={"url": "https://ok/feed"}),
                SourceConfig(id="bad", type="rss", group="en", params={"url": "https://fail/feed"})]

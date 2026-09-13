@@ -19,9 +19,16 @@ CREATE TABLE IF NOT EXISTS seen (
 );
 """
 
+_POPULARITY_TIERS = (10, 30, 100)
+
+
+def _popularity_tier(value: int | None) -> int:
+    score = max(0, value or 0)
+    return sum(score >= threshold for threshold in _POPULARITY_TIERS)
+
 
 class SeenStore:
-    """機械の既読。「ダイジェスト生成に回した」アイテムを記録し、30 日以内の再出現を止める。"""
+    """機械の既読。通常の再出現を30日止め、未表示記事は人気度の節目で再評価する。"""
 
     def __init__(self, path: Path):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -51,13 +58,47 @@ class SeenStore:
             return True  # 同日の再実行（--from triage 等）で全件消えないように
         return first_seen < today - timedelta(days=window_days)
 
-    def filter_new(self, items: Iterable[Item], today: date, window_days: int = 30) -> list[Item]:
-        return [it for it in items if self.is_new(it.id, today, window_days)]
+    def filter_new(
+        self,
+        items: Iterable[Item],
+        today: date,
+        window_days: int = 30,
+        *,
+        popularity_sources: set[str] | frozenset[str] = frozenset(),
+    ) -> list[Item]:
+        candidates = []
+        for item in items:
+            row = self.get(item.id)
+            popularity_source = bool(popularity_sources.intersection(item.mentions))
+            if (
+                row is not None
+                and popularity_source
+                and row["shown_on"] is not None
+                and row["shown_on"] != today.isoformat()
+            ):
+                continue
+            if self.is_new(item.id, today, window_days):
+                candidates.append(item)
+                continue
+            if (
+                row is not None
+                and row["shown_on"] is None
+                and row["category"] == "noise"
+                and popularity_source
+                and _popularity_tier(item.metrics.get("likes"))
+                > _popularity_tier(row["max_points"])
+            ):
+                candidates.append(item)
+        return candidates
 
     def mark(self, items: Iterable[Item], today: date, shown_ids: set[str], categories: dict[str, str]) -> None:
         rows = []
         for it in items:
-            points = max(it.metrics.values()) if it.metrics else None
+            points = (
+                it.metrics["likes"]
+                if "likes" in it.metrics
+                else max(it.metrics.values()) if it.metrics else None
+            )
             rows.append((
                 it.id, it.url, it.title, today.isoformat(),
                 today.isoformat() if it.id in shown_ids else None,

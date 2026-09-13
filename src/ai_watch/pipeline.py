@@ -144,8 +144,17 @@ def run_nightly(
             if dry_run and not seen_path.exists():
                 new_items = list(all_items)
             else:
+                popularity_sources = {
+                    source.id
+                    for source in settings.sources
+                    if source.params.get("recheck_popularity") is True
+                }
                 with SeenStore(seen_path) as seen:
-                    new_items = seen.filter_new(all_items, day)
+                    new_items = seen.filter_new(
+                        all_items,
+                        day,
+                        popularity_sources=popularity_sources,
+                    )
             profile_md = vault.read_profile()
             extra_profile = watchlist_profile(settings.watchlist)
             if extra_profile:

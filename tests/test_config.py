@@ -119,6 +119,20 @@ def test_public_watchlist_example_has_no_personal_tools():
     assert load_settings(root / "sources.yaml").watchlist == []
 
 
+def test_repository_zenn_sources_enable_api_metrics_and_popularity_recheck():
+    root = Path(__file__).resolve().parents[1]
+    settings = load_settings(root / "sources.yaml")
+    zenn_sources = [source for source in settings.sources if source.id.startswith("zenn-")]
+
+    assert [source.params["topic"] for source in zenn_sources] == [
+        "claudecode",
+        "codex",
+        "llm",
+    ]
+    assert all(source.type == "zenn" for source in zenn_sources)
+    assert all(source.params["recheck_popularity"] is True for source in zenn_sources)
+
+
 def test_load_source_ids_ignores_ambient_watchlist(tmp_path, monkeypatch):
     sources = tmp_path / "sources.yaml"
     sources.write_text(

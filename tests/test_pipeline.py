@@ -6,8 +6,10 @@ from pathlib import Path
 import httpx
 import pytest
 
+from ai_watch.adapters import ADAPTERS
 from ai_watch.claude_runner import ClaudeResult
 from ai_watch.config import Settings, SourceConfig
+from ai_watch.models import RawItem
 from ai_watch.pipeline import STAGES, run_nightly, today_jst
 from ai_watch.seen import SeenStore
 from ai_watch.vault import Vault
@@ -93,6 +95,77 @@ def test_nightly_end_to_end(tmp_path):
     r2 = run_nightly(s, date(2026, 8, 24), now=NOW, runner=runner, http=_http(), notifier=lambda t, m: None)
     assert r2.new == 0 and runner.calls == 1
     assert "新着はありませんでした" in v.read_digest(date(2026, 8, 24))
+
+
+def test_nightly_rechecks_unshown_source_after_likes_cross_a_tier(tmp_path, monkeypatch):
+    class GrowingAdapter:
+        likes = 2
+
+        def fetch(self, cfg, window, ctx):
+            return [RawItem(
+                source=cfg.id,
+                url="https://zenn.dev/sample/articles/growing",
+                title="後から注目された架空記事",
+                published_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+                metrics={"likes": self.likes},
+                lang="ja",
+            )]
+
+    class NoiseThenReadRunner:
+        calls = 0
+
+        def run(self, prompt, schema, **kwargs):
+            self.calls += 1
+            item_id = re.search(r"aw-[0-9a-f]{8}", prompt).group(0)
+            items = [] if self.calls == 1 else [{
+                "id": item_id,
+                "category": "read",
+                "score": 60,
+                "signals": {
+                    "attention": 2,
+                    "tryability": 0,
+                    "jp_gap": 1,
+                    "relevance": 2,
+                },
+                "reason": "人気度が伸びた",
+                "article_angle": "後から注目された理由",
+                "summary": "架空の要約",
+            }]
+            return ClaudeResult(True, {"items": items}, 0.01, "success")
+
+    adapter = GrowingAdapter()
+    monkeypatch.setitem(ADAPTERS, "growing_zenn", adapter)
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(
+        id="zenn",
+        type="growing_zenn",
+        group="jp",
+        params={"recheck_popularity": True},
+    )]
+    runner = NoiseThenReadRunner()
+
+    first = run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        runner=runner,
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+    adapter.likes = 10
+    second_day = date(2026, 8, 24)
+    second = run_nightly(
+        settings,
+        second_day,
+        now=NOW,
+        runner=runner,
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+
+    assert first.new == 1 and first.shown == 0
+    assert second.new == 1 and second.shown == 1
+    assert runner.calls == 2
 
 
 def test_nightly_can_skip_x_collect_and_saves_empty_stage(tmp_path):
