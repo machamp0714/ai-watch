@@ -8,22 +8,61 @@ from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
 from .adapters.base import FetchContext, TimeWindow, make_client
+from .adapters.zenn import ZennAdapter
 from .checks import apply_check_events
 from .claude_runner import ClaudeRunner
 from .collect import collect
 from .config import Settings
 from .decisions import DecisionStore, apply_decisions, parse_digest, sync_decisions
-from .models import Item, raw_from_dict, raw_to_dict
-from .normalize import normalize
+from .models import Item, RawItem, raw_from_dict, raw_to_dict
+from .normalize import item_id, normalize
 from .notify import log_line, notify
 from .render import Limits, render_digest, render_digest_data, shown_item_ids
 from .seen import SeenStore
 from .triage import TriageOutcome, triage
 from .vault import Vault
-from .watchlist import watchlist_profile
+from .watchlist import source_is_enabled, watchlist_profile
 
 STAGES = ["collect", "x_collect", "sync_decisions", "triage", "render"]
 JST = ZoneInfo("Asia/Tokyo")
+
+
+def _recheck_zenn_popularity(
+    settings: Settings,
+    day: date,
+    context: FetchContext,
+    current_raws: list[RawItem],
+    *,
+    migrate_schema: bool = True,
+) -> list[RawItem]:
+    configs = {
+        source.id: source
+        for source in settings.sources
+        if source.type == "zenn"
+        and source.params.get("recheck_popularity") is True
+        and source_is_enabled(source.id, settings.watchlist)
+    }
+    seen_path = settings.data_dir / "seen.sqlite"
+    if not configs or not seen_path.exists():
+        return []
+    with SeenStore(seen_path, migrate_schema=migrate_schema) as seen:
+        candidates = seen.zenn_recheck_candidates(day)
+    current_ids = {
+        item_id(raw.url) for raw in current_raws if "likes" in raw.metrics
+    }
+    grouped: dict[str, list[str]] = {}
+    default_source = next(iter(configs))
+    for candidate in candidates:
+        if candidate.id in current_ids:
+            continue
+        source_id = candidate.source_id if candidate.source_id in configs else default_source
+        grouped.setdefault(source_id, []).append(candidate.url)
+    adapter = ZennAdapter()
+    return [
+        item
+        for source_id, urls in grouped.items()
+        for item in adapter.fetch_tracked(configs[source_id], urls, context)
+    ]
 
 
 def today_jst(now: datetime | None = None) -> date:
@@ -111,9 +150,25 @@ def run_nightly(
             return FetchContext(http=http or make_client(settings.user_agent), data_dir=settings.data_dir,
                                 root=settings.root, runner=runner)
 
+        popularity_sources = {
+            source.id
+            for source in settings.sources
+            if source.params.get("recheck_popularity") is True
+        }
+
         # 1. collect / 2. x_collect ------------------------------------------------
         if start <= STAGES.index("collect"):
             c = collect(settings, window, ctx(), day=day)
+            rechecked = _recheck_zenn_popularity(
+                settings,
+                day,
+                ctx(),
+                c.items,
+                migrate_schema=not dry_run,
+            )
+            if rechecked:
+                c.items.extend(rechecked)
+                c.counts["zenn-popularity-recheck"] = len(rechecked)
             work.save("collect", {"items": [raw_to_dict(i) for i in c.items], "warnings": c.warnings, "counts": c.counts})
         if start <= STAGES.index("x_collect"):
             if skip_x_collect:
@@ -144,12 +199,7 @@ def run_nightly(
             if dry_run and not seen_path.exists():
                 new_items = list(all_items)
             else:
-                popularity_sources = {
-                    source.id
-                    for source in settings.sources
-                    if source.params.get("recheck_popularity") is True
-                }
-                with SeenStore(seen_path) as seen:
+                with SeenStore(seen_path, migrate_schema=not dry_run) as seen:
                     new_items = seen.filter_new(
                         all_items,
                         day,
@@ -206,7 +256,13 @@ def run_nightly(
         )
         if not dry_run:
             with SeenStore(seen_path) as seen:
-                seen.mark(new_items, day, shown, {t.id: t.category for t in outcome.triaged})
+                seen.mark(
+                    new_items,
+                    day,
+                    shown,
+                    {t.id: t.category for t in outcome.triaged},
+                    popularity_sources=popularity_sources,
+                )
             vault.append_line(vault.log, log_line(day, collected=report.collected, new=report.new, n_try=report.n_try,
                                                   mode=report.mode, cost_usd=report.cost_usd, warnings=warnings))
             if warnings or outcome.mode == "untriaged":

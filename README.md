@@ -9,7 +9,7 @@ LLM 周辺（Claude Code / Codex の更新、注目記事）を夜間に収集�
 ```mermaid
 flowchart TD
     GHA["GitHub Actions<br/>毎日 20:00 UTC"] --> PULL["ai-watch-r2 pull<br/>非公開R2から設定・状態を取得"]
-    PULL --> N["ai-watch nightly --skip-x-collect<br/>window = 基本30h<br/>Zenn人気記事は窓外も再評価"]
+    PULL --> N["ai-watch nightly --skip-x-collect<br/>window = 基本30h<br/>未表示のZenn記事は7日間再確認"]
     LOCAL["ローカル手動実行<br/>X収集を使う場合"] --> NLOCAL["ai-watch nightly"]
     NLOCAL --> SRC
     N --> SRC
@@ -165,8 +165,9 @@ Zennは内部APIの新着順と人気順から記事と`likes`、`bookmarks`、`
 内部APIが失敗した場合はRSSだけで収集を継続し、RSSが失敗しても内部APIが成功していれば記事とmetricsを残す。
 両方が失敗した場合だけ、その収集先を`warnings`へ追加する。
 
-初回に`noise`となって表示されなかったZenn記事は、いいね数が10、30、100へ初めて達した日に再評価する。
+初回に`noise`となって表示されなかったZenn記事は、初見から7日間、一覧から外れた後も個別APIで人気度を再確認し、いいね数が10、30、100へ初めて達した日に再評価する。
 同じ人気度帯では再評価せず、一度ダイジェストへ表示した記事は人気度が伸びても再掲しない。
+7日を過ぎた記事の個別確認は止めるが、その後にZennの人気順一覧へ入った場合は同じ閾値判定で再評価する。
 
 監視リストを変更した後、通常実行は次回の収集から新設定を使う。
 `nightly --from triage`は保存済みの収集結果を保ったまま新しい関心設定で再選別し、`nightly --from render`は保存済みの選別結果を使うため再選別しない。
