@@ -9,14 +9,14 @@ LLM 周辺（Claude Code / Codex の更新、注目記事）を夜間に収集�
 ```mermaid
 flowchart TD
     GHA["GitHub Actions<br/>毎日 20:00 UTC"] --> PULL["ai-watch-r2 pull<br/>非公開R2から設定・状態を取得"]
-    PULL --> N["ai-watch nightly --skip-x-collect<br/>window = 直近 30h"]
+    PULL --> N["ai-watch nightly --skip-x-collect<br/>window = 基本30h<br/>未表示のZenn記事は7日間再確認"]
     LOCAL["ローカル手動実行<br/>X収集を使う場合"] --> NLOCAL["ai-watch nightly"]
     NLOCAL --> SRC
     N --> SRC
 
     subgraph C1["1. collect — HTTP のみ / LLM 不使用"]
         direction LR
-        SRC["sources.yaml<br/>公式 6 / EN 7 / JP 7 ソース"] --> AD["adapters<br/>rss・github_releases・github_file_sections<br/>hn_algolia・html_diff・note_search"]
+        SRC["sources.yaml<br/>公式 6 / EN 7 / JP 7 ソース"] --> AD["adapters<br/>rss・github_releases・github_file_sections<br/>hn_algolia・html_diff・note_search・zenn"]
         AD -->|"ホスト単位で直列化 + 2s delay<br/>ソース単位で例外を隔離 → warnings"| RAW[("data/raw/&lt;date&gt;/&lt;source&gt;.json")]
     end
 
@@ -36,7 +36,7 @@ flowchart TD
     end
 
     BL --> NRM["normalize<br/>URL 正規化 → 同一 URL を束ね → タイトル Jaccard ≥ 0.8 で束ね"]
-    NRM --> SEEN[("data/seen.sqlite<br/>30 日以内に見た id を除外")]
+    NRM --> SEEN[("data/seen.sqlite<br/>30 日以内に見た id を除外<br/>未表示のZenn記事は人気度の節目で再評価")]
     SEEN --> PR
 
     subgraph C4["4. triage — LLM 使用"]
@@ -160,6 +160,14 @@ tools:
 取得結果では、成功した収集先の対象期間内候補が0件なら`counts[id] = 0`、取得失敗なら`warnings`に原因が入り、そのIDは`counts`へ追加されない。
 0件は「製品に更新がない」という断定ではなく、取得方式が返した対象期間内の候補が0件だったことを表す。
 個人設定を表示する`watchlist`コマンドの出力は公開Actionsログへ流さない。
+
+Zennは内部APIの新着順と人気順から記事と`likes`、`bookmarks`、`comments`を取得し、RSSの抜粋を同じURLの記事へ補完する。
+内部APIが失敗した場合はRSSだけで収集を継続し、RSSが失敗しても内部APIが成功していれば記事とmetricsを残す。
+両方が失敗した場合だけ、その収集先を`warnings`へ追加する。
+
+初回に`noise`となって表示されなかったZenn記事は、初見から7日間、一覧から外れた後も個別APIで人気度を再確認し、いいね数が10、30、100へ初めて達した日に再評価する。
+同じ人気度帯では再評価せず、一度ダイジェストへ表示した記事は人気度が伸びても再掲しない。
+7日を過ぎた記事の個別確認は止めるが、その後にZennの人気順一覧へ入った場合は同じ閾値判定で再評価する。
 
 監視リストを変更した後、通常実行は次回の収集から新設定を使う。
 `nightly --from triage`は保存済みの収集結果を保ったまま新しい関心設定で再選別し、`nightly --from render`は保存済みの選別結果を使うため再選別しない。

@@ -77,19 +77,28 @@ sources:
 
   # ---- JP コミュニティ ----
   - id: zenn-claudecode
-    type: rss
+    type: zenn
     group: jp
+    topic: claudecode
     url: https://zenn.dev/topics/claudecode/feed
+    size: 20
+    recheck_popularity: true
     lang: ja
   - id: zenn-codex
-    type: rss
+    type: zenn
     group: jp
+    topic: codex
     url: https://zenn.dev/topics/codex/feed
+    size: 20
+    recheck_popularity: true
     lang: ja
   - id: zenn-llm
-    type: rss
+    type: zenn
     group: jp
+    topic: llm
     url: https://zenn.dev/topics/llm/feed
+    size: 20
+    recheck_popularity: true
     lang: ja
   - id: hatena-claudecode
     type: rss

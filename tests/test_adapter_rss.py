@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 import httpx
+import pytest
 
 from ai_watch.adapters.base import TimeWindow
 from ai_watch.adapters.rss import RssAdapter
@@ -61,6 +62,14 @@ def test_http_error_raises(make_ctx):
         assert False, "should raise"
     except httpx.HTTPStatusError:
         pass
+
+
+def test_broken_rss_raises_instead_of_looking_like_an_empty_feed(make_ctx):
+    ctx = make_ctx(lambda req: httpx.Response(200, content=b"not-rss"))
+    cfg = SourceConfig(id="r", type="rss", group="en", params={"url": "https://x/rss"})
+
+    with pytest.raises(ValueError, match="RSSの形式が不正です"):
+        RssAdapter().fetch(cfg, WINDOW, ctx)
 
 
 def test_rss_retries_once_on_429_with_reset_header(make_ctx):

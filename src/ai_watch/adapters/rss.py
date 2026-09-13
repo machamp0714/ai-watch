@@ -25,6 +25,8 @@ class RssAdapter:
     def fetch(self, cfg: SourceConfig, window: TimeWindow, ctx: FetchContext) -> list[RawItem]:
         resp = self._get(cfg.params["url"], ctx)
         feed = feedparser.parse(resp.content)
+        if getattr(feed, "bozo", False) and not feed.entries:
+            raise ValueError("RSSの形式が不正です")
         keywords = [k.lower() for k in cfg.params.get("keywords", [])]
         lang = cfg.params.get("lang", "en")
 

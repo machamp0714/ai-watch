@@ -95,7 +95,10 @@ def collect(
                     result.warnings.append(f"{cfg.id}: {type(e).__name__}: {first_line}")
                     continue
                 save_raw(settings.data_dir, day, cfg.id, fetched)
-                kept = [i for i in fetched if i.published_at is None or window.contains(i.published_at)]
+                if cfg.params.get("recheck_popularity") is True:
+                    kept = fetched
+                else:
+                    kept = [i for i in fetched if i.published_at is None or window.contains(i.published_at)]
                 result.items.extend(kept)
                 result.counts[cfg.id] = len(kept)
     return result

@@ -1,13 +1,16 @@
 import json
 import re
+import sqlite3
 from datetime import date, datetime, timezone
 from pathlib import Path
 
 import httpx
 import pytest
 
+from ai_watch.adapters import ADAPTERS
 from ai_watch.claude_runner import ClaudeResult
 from ai_watch.config import Settings, SourceConfig
+from ai_watch.models import RawItem
 from ai_watch.pipeline import STAGES, run_nightly, today_jst
 from ai_watch.seen import SeenStore
 from ai_watch.vault import Vault
@@ -95,6 +98,189 @@ def test_nightly_end_to_end(tmp_path):
     assert "新着はありませんでした" in v.read_digest(date(2026, 8, 24))
 
 
+def test_nightly_rechecks_unshown_source_after_likes_cross_a_tier(tmp_path, monkeypatch):
+    class GrowingAdapter:
+        likes = 2
+
+        def fetch(self, cfg, window, ctx):
+            return [RawItem(
+                source=cfg.id,
+                url="https://zenn.dev/sample/articles/growing",
+                title="後から注目された架空記事",
+                published_at=datetime(2026, 8, 1, tzinfo=timezone.utc),
+                metrics={"likes": self.likes},
+                lang="ja",
+            )]
+
+    class NoiseThenReadRunner:
+        calls = 0
+
+        def run(self, prompt, schema, **kwargs):
+            self.calls += 1
+            item_id = re.search(r"aw-[0-9a-f]{8}", prompt).group(0)
+            items = [] if self.calls == 1 else [{
+                "id": item_id,
+                "category": "read",
+                "score": 60,
+                "signals": {
+                    "attention": 2,
+                    "tryability": 0,
+                    "jp_gap": 1,
+                    "relevance": 2,
+                },
+                "reason": "人気度が伸びた",
+                "article_angle": "後から注目された理由",
+                "summary": "架空の要約",
+            }]
+            return ClaudeResult(True, {"items": items}, 0.01, "success")
+
+    adapter = GrowingAdapter()
+    monkeypatch.setitem(ADAPTERS, "growing_zenn", adapter)
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(
+        id="zenn",
+        type="growing_zenn",
+        group="jp",
+        params={"recheck_popularity": True},
+    )]
+    runner = NoiseThenReadRunner()
+
+    first = run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        runner=runner,
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+    adapter.likes = 10
+    second_day = date(2026, 8, 24)
+    second = run_nightly(
+        settings,
+        second_day,
+        now=NOW,
+        runner=runner,
+        http=_http(),
+        notifier=lambda *args: None,
+    )
+
+    assert first.new == 1 and first.shown == 0
+    assert second.new == 1 and second.shown == 1
+    assert runner.calls == 2
+
+
+def test_nightly_rechecks_zenn_article_after_it_leaves_the_lists(tmp_path):
+    state = {"day": 1}
+    detail_calls = []
+
+    def article(likes):
+        return {
+            "id": 1,
+            "post_type": "Article",
+            "title": "後から注目された架空記事",
+            "slug": "growing-later",
+            "comments_count": 1,
+            "liked_count": likes,
+            "bookmarked_count": 3,
+            "body_letters_count": 1200,
+            "article_type": "tech",
+            "emoji": "🧪",
+            "is_suspending": False,
+            "published_at": "2026-08-22T10:00:00+09:00",
+            "body_updated_at": "2026-08-22T10:00:00+09:00",
+            "source_repo_updated_at": None,
+            "pinned": False,
+            "path": "/sample/articles/growing-later",
+            "principal_type": "User",
+            "user": {"id": 1, "username": "sample", "name": "架空ユーザー"},
+            "publication": None,
+        }
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/articles/growing-later":
+            detail_calls.append(request)
+            value = article(10)
+            value["body_html"] = "<p>後から評価が増えました。</p>"
+            return httpx.Response(200, json={"article": value})
+        if request.url.path == "/api/articles":
+            values = [article(2)] if state["day"] == 1 else []
+            return httpx.Response(200, json={"articles": values, "next_page": None})
+        if request.url.path == "/topics/llm/feed":
+            rss_item = "" if state["day"] == 1 else """
+                <item><title>後から注目された架空記事</title>
+                <link>https://zenn.dev/sample/articles/growing-later</link>
+                <pubDate>Sat, 22 Aug 2026 01:00:00 GMT</pubDate></item>
+            """
+            return httpx.Response(
+                200,
+                content=(
+                    f'<rss version="2.0"><channel><title>Zenn</title>{rss_item}'
+                    "</channel></rss>"
+                ).encode(),
+            )
+        return httpx.Response(404)
+
+    class NoiseThenReadRunner:
+        calls = 0
+
+        def run(self, prompt, schema, **kwargs):
+            self.calls += 1
+            item_id = re.search(r"aw-[0-9a-f]{8}", prompt).group(0)
+            items = [] if self.calls == 1 else [{
+                "id": item_id,
+                "category": "read",
+                "score": 60,
+                "signals": {
+                    "attention": 2,
+                    "tryability": 0,
+                    "jp_gap": 1,
+                    "relevance": 2,
+                },
+                "reason": "人気度が伸びた",
+                "article_angle": "後から注目された理由",
+                "summary": "架空の要約",
+            }]
+            return ClaudeResult(True, {"items": items}, 0.01, "success")
+
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(
+        id="zenn-llm",
+        type="zenn",
+        group="jp",
+        params={
+            "topic": "llm",
+            "url": "https://zenn.dev/topics/llm/feed",
+            "lang": "ja",
+            "recheck_popularity": True,
+        },
+    )]
+    runner = NoiseThenReadRunner()
+    http = httpx.Client(transport=httpx.MockTransport(responder))
+
+    first = run_nightly(
+        settings,
+        DAY,
+        now=NOW,
+        runner=runner,
+        http=http,
+        notifier=lambda *args: None,
+    )
+    state["day"] = 2
+    second = run_nightly(
+        settings,
+        date(2026, 8, 24),
+        now=NOW,
+        runner=runner,
+        http=http,
+        notifier=lambda *args: None,
+    )
+
+    assert first.new == 1 and first.shown == 0
+    assert second.new == 1 and second.shown == 1
+    assert len(detail_calls) == 1
+    assert runner.calls == 2
+
+
 def test_nightly_can_skip_x_collect_and_saves_empty_stage(tmp_path):
     settings = _settings(tmp_path)
     settings.sources.append(
@@ -143,6 +329,63 @@ def test_dry_run_touches_nothing_in_vault(tmp_path):
     assert Path(r.digest_path) == s.data_dir / "work" / "2026-08-23" / "digest.md" and Path(r.digest_path).exists()
     assert Path(r.digest_path).with_suffix(".json").exists()
     assert not (s.data_dir / "seen.sqlite").exists()
+
+
+def test_dry_run_does_not_migrate_an_existing_seen_database(tmp_path):
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(
+        id="zenn-llm",
+        type="zenn",
+        group="jp",
+        params={
+            "topic": "llm",
+            "url": "https://zenn.dev/topics/llm/feed",
+            "lang": "ja",
+            "recheck_popularity": True,
+        },
+    )]
+    settings.data_dir.mkdir(parents=True)
+    seen_path = settings.data_dir / "seen.sqlite"
+    with sqlite3.connect(seen_path) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE seen (
+              id TEXT PRIMARY KEY,
+              url TEXT NOT NULL,
+              title TEXT,
+              first_seen TEXT NOT NULL,
+              shown_on TEXT,
+              category TEXT,
+              max_points INTEGER
+            );
+            """
+        )
+    before = seen_path.read_bytes()
+
+    def responder(request: httpx.Request) -> httpx.Response:
+        if request.url.path == "/api/articles":
+            return httpx.Response(200, json={"articles": [], "next_page": None})
+        if request.url.path == "/topics/llm/feed":
+            return httpx.Response(
+                200,
+                content=b'<rss version="2.0"><channel><title>Zenn</title></channel></rss>',
+            )
+        return httpx.Response(404)
+
+    run_nightly(
+        settings,
+        DAY,
+        dry_run=True,
+        now=NOW,
+        runner=FakeRunner(),
+        http=httpx.Client(transport=httpx.MockTransport(responder)),
+        notifier=lambda *args: None,
+    )
+
+    with sqlite3.connect(seen_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(seen)")}
+    assert {"popularity_source", "max_likes"}.isdisjoint(columns)
+    assert seen_path.read_bytes() == before
 
 
 def test_untriaged_fallback_notifies(tmp_path):
