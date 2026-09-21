@@ -178,3 +178,10 @@ def test_past_items_reads_previous_days_and_skips_missing_or_broken(tmp_path):
     write("2026-09-20", json.dumps({"items": [_item("aw-00000002", "today").to_dict()]}))   # 当日は含めない
     out = _past_items(tmp_path, date(2026, 9, 20), days=3)
     assert [[it.id for it in items] for items in out] == [["aw-00000001"]]
+
+
+def test_detect_trends_ignores_plan_and_chip_suffix_pro():
+    titles = [("a", "Claude Pro usage"), ("b", "M1Pro で動かす"), ("c", "ChatGPT Pro plan"),
+              ("a", "Gemini 3 Pro review"), ("b", "MacBook Pro setup")]
+    items = [_item(f"aw-{n:08x}", t, s) for n, (s, t) in enumerate(titles)]
+    assert detect_trends(items) == []

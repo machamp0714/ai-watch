@@ -20,7 +20,7 @@ does did its our their them they his her she him will would should could than th
 where which who why all any some more most very one two over only also still even back been being
 make made like want need via per but try really says anyone other real own run running next after
 think part line low hour weekly report problem live release released research search researcher
-plan max mini game human coding subs reset token tokens tok
+plan max mini pro game human coding subs reset token tokens tok
 claude code codex llm llms openai anthropic chatgpt chat gpt model models agent agents agentic mcp
 api app apps usage limit limits tool tools prompt prompts skill skills hook hooks plugin plugins
 subagent github google gemini local open source free build built building work working works day
