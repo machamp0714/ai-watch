@@ -284,3 +284,31 @@ test("ETag競合時に再取得して両方のチェックを失わない", asyn
     .map(JSON.parse);
   assert.deepEqual(new Set(lines.map((event) => event.id)), new Set(["aw-00000001", "aw-00000002"]));
 });
+
+
+test("話題クラスタがあれば今日の話題セクションを先頭に描画する", async () => {
+  const digest = {
+    ...DIGEST,
+    trends: [
+      {
+        label: "Jev",
+        count: 21,
+        sources: ["zenn-llm", "reddit-localllama"],
+        items: [{ title: "Jev <入門>", url: "https://example.com/jev", source: "zenn-llm", summary: ["要点"] }]
+      }
+    ]
+  };
+  const bucket = new FakeBucket({ "vault/digests/2026-09-12.json": JSON.stringify(digest) });
+  const html = await (await worker.fetch(new Request("https://watch.example/2026-09-12"), env(bucket))).text();
+
+  assert.match(html, /id="trends"/);
+  assert.match(html, /Jev <span class="section-count">21件・2ソース/);
+  assert.match(html, /Jev &lt;入門&gt;/);
+  assert.ok(html.indexOf('id="trends"') < html.indexOf('id="try"'));
+});
+
+test("trendsが無い旧digestでは今日の話題を出さない", async () => {
+  const bucket = new FakeBucket({ "vault/digests/2026-09-12.json": JSON.stringify(DIGEST) });
+  const html = await (await worker.fetch(new Request("https://watch.example/2026-09-12"), env(bucket))).text();
+  assert.doesNotMatch(html, /id="trends"/);
+});

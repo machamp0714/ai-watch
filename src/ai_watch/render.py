@@ -6,6 +6,7 @@ from datetime import date
 from typing import Any
 
 from .models import Item, TriagedItem
+from .trends import Trend
 from .triage import TriageOutcome
 
 _BLOCK_ID = re.compile(r"\^(aw-[0-9a-f]{8})\b")
@@ -18,6 +19,7 @@ class Limits:
     try_: int = 3
     read: int = 3
     update: int = 5
+    trend_items: int = 3
 
 
 @dataclass(frozen=True)
@@ -90,6 +92,33 @@ def _table(rows: list[tuple[Item, TriagedItem]]) -> list[str]:
     if not rows:
         return ["（なし）"]
     return TABLE_HEADER + [_table_row(it, t) for it, t in rows]
+
+
+def _trend_members(
+    trend: Trend, items: dict[str, Item], outcome: TriageOutcome, limit: int
+) -> list[tuple[Item, TriagedItem | None]]:
+    """話題クラスタの代表記事: noise 以外を score 順、足りなければ反響順で補う。"""
+    by_id = {t.id: t for t in outcome.triaged}
+    members = [i for i in trend.item_ids if i in items]
+
+    def key(i: str) -> tuple[int, int, int]:
+        t = by_id.get(i)
+        it = items[i]
+        judged = t is not None and t.category != "noise"
+        return (int(judged), t.score if t else 0, sum(max(0, v) for v in it.metrics.values()) + len(it.mentions))
+
+    members.sort(key=key, reverse=True)
+    return [(items[i], by_id.get(i)) for i in members[:limit]]
+
+
+def _trend_lines(trend: Trend, items: dict[str, Item], outcome: TriageOutcome, limit: int) -> list[str]:
+    # ブロック ID は付けない（チェック回収・shown の対象は各セクションの記事だけ）
+    lines = [f"- **{_clean(trend.label)}**（{len(trend.item_ids)} 件・{len(trend.sources)} ソース）"]
+    for it, t in _trend_members(trend, items, outcome, limit):
+        summary = " ".join(_summary_lines(t)) if t else ""
+        tail = f" — {summary}" if summary else ""
+        lines.append(f"  - [{_clean(it.title) or '(no title)'}]({_url(it)})（{_src(it)}）{tail}")
+    return lines
 
 
 def shown_item_ids(md: str) -> set[str]:
@@ -181,6 +210,19 @@ def render_digest_data(
         ],
     }
     shown = {item["id"] for section in sections.values() for item in section}
+    trends = [
+        {
+            "label": _clean(trend.label),
+            "count": len(trend.item_ids),
+            "sources": list(trend.sources),
+            "items": [
+                {"title": it.title.strip() or "(no title)", "url": it.url, "source": it.source,
+                 "summary": _summary_lines(t) if t else []}
+                for it, t in _trend_members(trend, items, outcome, limits.trend_items)
+            ],
+        }
+        for trend in outcome.trends
+    ]
     return {
         "date": day.isoformat(),
         "mode": outcome.mode,
@@ -188,6 +230,7 @@ def render_digest_data(
         "items_shown": len(shown),
         "cost_usd": outcome.cost_usd,
         "warnings": [_clean_warning(warning) for warning in warnings],
+        "trends": trends,
         "sections": sections,
     }
 
@@ -200,6 +243,11 @@ def render_digest(
     body: list[str] = [f"# AI Watch {day.isoformat()}", ""]
     if warnings:
         body += [f"> ⚠ 取得失敗: {_clean_warning(w)}" for w in warnings] + [""]
+    if outcome.trends:
+        body += ["## 🔥 今日の話題"]
+        for trend in outcome.trends:
+            body += _trend_lines(trend, items, outcome, limits.trend_items)
+        body += [""]
 
     if outcome.mode == "untriaged":
         body += [f"> ⚠ トリアージ失敗（{_clean_warning(outcome.error)}）。metrics 順の生リストです。", "",
