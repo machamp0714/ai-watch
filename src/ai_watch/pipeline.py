@@ -132,12 +132,14 @@ def _carry_over_checks(md: str, ids: set[str]) -> str:
 
 def run_nightly(
     settings: Settings, day: date, *, from_stage: str = "collect", dry_run: bool = False,
-    skip_x_collect: bool = False,
+    skip_x_collect: bool = False, retriage: bool = False,
     now: datetime | None = None, runner: Any | None = None, http: Any | None = None,
     notifier: Callable[[str, str], None] = notify,
 ) -> NightlyReport:
     if from_stage not in STAGES:
         raise ValueError(f"unknown stage '{from_stage}' (choose from {STAGES})")
+    if retriage and from_stage != "triage":
+        raise ValueError("retriage は from_stage='triage' でのみ使える")
     start = STAGES.index(from_stage)
     now = now or datetime.now(timezone.utc)
     work = Work(settings.data_dir, day)
@@ -209,7 +211,15 @@ def run_nightly(
         all_items = normalize(raws, settings.source_groups())
         seen_path = settings.data_dir / "seen.sqlite"
         if start <= STAGES.index("triage"):
-            if dry_run and not seen_path.exists():
+            previous = work.load("triage") if retriage else None
+            if retriage:
+                # 過去日の選別やり直し: seen は後日分の状態も含むので使わず、当日選別したアイテムをそのまま再判定する
+                if previous is None:
+                    raise FileNotFoundError(f"retriage: missing {work.path('triage')}")
+                if not work.path("triage.before-retriage").exists():   # 2 回目以降も最初の結果を残す
+                    work.save("triage.before-retriage", previous)
+                new_items = [Item.from_dict(d) for d in previous["items"]]
+            elif dry_run and not seen_path.exists():
                 new_items = list(all_items)
             else:
                 with SeenStore(seen_path, migrate_schema=not dry_run) as seen:
@@ -268,7 +278,7 @@ def run_nightly(
             warnings=warnings, cost_usd=outcome.cost_usd, digest_path=str(digest_path),
             decisions_added=decisions_added, n_try=len(try_ids), try_ids=try_ids,
         )
-        if not dry_run:
+        if not dry_run and not retriage:
             with SeenStore(seen_path) as seen:
                 seen.mark(
                     new_items,

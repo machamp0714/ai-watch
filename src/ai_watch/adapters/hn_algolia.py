@@ -10,17 +10,22 @@ API = "https://hn.algolia.com/api/v1/search_by_date"
 
 
 class HnAlgoliaAdapter:
-    """HN Algolia API。params: queries(list), min_points(既定 50)。window.start 以降・points>min を API 側で絞る。"""
+    """HN Algolia API。params: queries(list), min_points(既定 50), top_min_points(任意)。
+    window.start 以降・points>min を API 側で絞る。top_min_points があれば、キーワードなしで
+    それを超える高得点ストーリーも取る（クエリに無い新しい名前の話題を拾うため）。"""
 
     def fetch(self, cfg: SourceConfig, window: TimeWindow, ctx: FetchContext) -> list[RawItem]:
         min_points = int(cfg.params.get("min_points", 50))
+        requests = [(q, min_points) for q in cfg.params["queries"]]
+        if cfg.params.get("top_min_points") is not None:
+            requests.append(("", int(cfg.params["top_min_points"])))
         since = int(window.start.timestamp())
         seen_ids: set[str] = set()
         out: list[RawItem] = []
-        for q in cfg.params["queries"]:
+        for q, points in requests:
             resp = ctx.http.get(API, params={
                 "query": q, "tags": "story", "hitsPerPage": 50,
-                "numericFilters": f"points>{min_points},created_at_i>{since}",
+                "numericFilters": f"points>{points},created_at_i>{since}",
             })
             resp.raise_for_status()
             for h in resp.json().get("hits", []):

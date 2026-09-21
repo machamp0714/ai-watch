@@ -131,3 +131,22 @@ def test_ci_runs_python_and_worker_verification_without_secrets():
             if "uses" in step:
                 _, reference = step["uses"].rsplit("@", 1)
                 assert re.fullmatch(r"[0-9a-f]{40}", reference.split()[0])
+
+
+def test_retriage_is_manual_single_writer_and_does_not_touch_seen_or_config():
+    workflow = _workflow("retriage.yml")
+    triggers = workflow["on"]
+    assert set(triggers) == {"workflow_dispatch"}
+    assert workflow["concurrency"]["group"] == _workflow("nightly.yml")["concurrency"]["group"]
+    steps = _steps(workflow, "retriage")
+    commands = [step.get("run", "") for step in steps]
+    pull = next(i for i, c in enumerate(commands) if "ai-watch-r2 pull" in c)
+    run = next(i for i, c in enumerate(commands) if "ai-watch nightly" in c)
+    push = next(i for i, c in enumerate(commands) if "ai-watch-r2 push-results" in c)
+    assert pull < run < push
+    assert "--from triage --retriage --skip-x-collect" in commands[run]
+    assert "${{" not in commands[run]                       # 入力は env 経由でのみ受け取る
+    assert "inputs.dates" in steps[run]["env"]["DATES"]
+    assert "secrets.R2_ACCESS_KEY_ID" not in "\n".join(steps[run]["env"].values())
+    all_commands = "\n".join(commands)
+    assert "--delete" not in all_commands and "watchlist" not in all_commands.replace("AI_WATCH_WATCHLIST_FILE", "")

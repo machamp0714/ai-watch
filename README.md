@@ -43,8 +43,9 @@ flowchart TD
         direction LR
         PRF["vault profile.md<br/>（関心プロファイル）"] --> PR["prompts/triage.md"]
         DECF["decisions 直近 30 件<br/>（few-shot）"] --> PR
+        TRD["今日の話題クラスタ<br/>タイトルの固有名詞 5 件・3 ソース以上<br/>過去 7 日の定番語は急増時のみ"] --> PR
         PR --> LLM["claude -p<br/>model=sonnet / effort=low / budget $2.0"]
-        LLM -->|成功| TR["try / read / update / noise に分類<br/>+ 公式ソースの noise を update へ自動昇格"]
+        LLM -->|成功| TR["try / read / update / noise に分類<br/>+ 公式ソースの noise を update へ自動昇格<br/>+ 高反響記事・話題の代表記事を read へ自動昇格"]
         LLM -->|"失敗（retry 1 回後）"| FB["fallback_rank<br/>metrics 順 / mode=untriaged"]
     end
 
@@ -53,7 +54,7 @@ flowchart TD
 
     subgraph C5["5. render"]
         direction LR
-        RD["共通の選抜結果<br/>try 3 / read 3 / update 5 件"] --> MD["digest.md<br/>同日再実行時は既存のチェックを引き継ぐ"]
+        RD["共通の選抜結果<br/>今日の話題 / try 3 / read 3 / update 5 件"] --> MD["digest.md<br/>同日再実行時は既存のチェックを引き継ぐ"]
         RD --> JSON["digest.json<br/>UI向けの構造化データ"]
     end
 
@@ -251,6 +252,11 @@ Claude Code CLI、AWS CLI v2、Python依存はrunner上で準備する。
 `x_collect`はログイン済みPlaywrightセッションをCIへ持ち込まないため、空の成功段階として保存する。
 引数を指定しないローカルnightlyでは、従来どおりX収集を行う。
 
+`.github/workflows/retriage.yml`は手動専用で、入力した過去日（空白区切り）の選別を
+`nightly --from triage --retriage`でやり直し、ダイジェストを再生成する。
+`seen.sqlite`は後日分の状態も含むため更新せず、元の選別結果は`triage.before-retriage.json`に残す。
+nightlyと同じconcurrency groupで直列化する。
+
 初回実行前に、非公開の`config/watchlist.yaml`を`create-watchlist`でR2へ明示登録する必要がある。
 workflowは公開サンプルへのフォールバックや設定の初回登録を行わない。
 設定本文をGitHub Actionsの入力、ログ、Issueへ貼り付けない。
@@ -299,6 +305,7 @@ Worker単位のAccessは`workers.dev`、Custom Domain、previewをまとめて�
 uv run ai-watch nightly --dry-run           # vault に書かず data/work/<date>/digest.mdと.jsonに出す
 uv run ai-watch nightly                     # 本番
 uv run ai-watch nightly --from triage       # 収集済みデータから再トリアージ
+uv run ai-watch nightly --date 2026-09-19 --from triage --retriage   # 過去日の選別をやり直す（seen は更新しない）
 uv run ai-watch collect --only hn           # 1 ソースだけ疎通
 uv run ai-watch sync                        # ダイジェストのチェックを今すぐ反映
 ```
