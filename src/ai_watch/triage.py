@@ -190,13 +190,13 @@ def fallback_rank(items: list[Item]) -> list[TriagedItem]:
 
 def triage(
     items: list[Item], *, profile_md: str, decisions: list[Decision], runner: Any, root: Path, day: date,
-    budget_usd: float = 2.0,
+    budget_usd: float = 2.0, trend_baseline: dict[str, float] | None = None,
 ) -> TriageOutcome:
     if not items:
         return TriageOutcome("triaged", [], 0.0)
     template = (root / "prompts" / "triage.md").read_text(encoding="utf-8")
     schema = json.loads((root / "schemas" / "triage.schema.json").read_text(encoding="utf-8"))
-    trends = detect_trends(items)
+    trends = detect_trends(items, baseline=trend_baseline)
     prompt = build_prompt(template, items, profile_md, decisions, day, trends)
     res = runner.run(prompt, schema, budget_usd=budget_usd, effort="low", retries=1)
     if not res.ok:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -19,6 +19,7 @@ from .normalize import item_id, normalize
 from .notify import log_line, notify
 from .render import Limits, render_digest, render_digest_data, shown_item_ids
 from .seen import SeenStore
+from .trends import BASELINE_DAYS, baseline_terms
 from .triage import TriageOutcome, triage
 from .vault import Vault
 from .watchlist import source_is_enabled, watchlist_profile
@@ -85,6 +86,18 @@ class NightlyReport:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+def _past_items(data_dir: Path, day: date, days: int = BASELINE_DAYS) -> list[list[Item]]:
+    """話題のベースライン用に、前日から days 日分の triage 済みアイテム（無い日・壊れた日は飛ばす）。"""
+    out: list[list[Item]] = []
+    for n in range(1, days + 1):
+        path = data_dir / "work" / (day - timedelta(days=n)).isoformat() / "triage.json"
+        try:
+            out.append([Item.from_dict(d) for d in json.loads(path.read_text(encoding="utf-8"))["items"]])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return out
 
 
 class Work:
@@ -210,7 +223,8 @@ def run_nightly(
             if extra_profile:
                 profile_md = profile_md.rstrip() + "\n\n" + extra_profile
             outcome = triage(new_items, profile_md=profile_md, decisions=store.recent(30),
-                             runner=runner, root=settings.root, day=day)
+                             runner=runner, root=settings.root, day=day,
+                             trend_baseline=baseline_terms(_past_items(settings.data_dir, day)))
             work.save("triage", {"items": [i.to_dict() for i in new_items], "outcome": outcome.to_dict()})
         t_data = work.load("triage") or {"items": [], "outcome": TriageOutcome("triaged", [], 0.0).to_dict()}
         new_items = [Item.from_dict(d) for d in t_data["items"]]

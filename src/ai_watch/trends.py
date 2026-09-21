@@ -74,8 +74,15 @@ def _is_name_like(forms: list[tuple[str, bool]]) -> bool:
     return named / len(body) >= 0.7
 
 
-def detect_trends(items: list[Item], *, min_items: int = 5, min_sources: int = 3, top: int = 3) -> list[Trend]:
-    """min_items 件以上・min_sources ソース以上のタイトルに現れる固有名詞を、件数の多い順に top 件。"""
+# 過去 BASELINE_DAYS 日のうち BASELINE_MIN_DAYS 日以上で話題条件を満たした語は「定番」とみなし、
+# 今日の件数が過去平均の BASELINE_SPIKE 倍に届かなければ除外する
+# （Fable / Opus など毎日出るモデル名が枠を占め、新しい名前が押し出されるのを防ぐ。盛り上がり続ける話題は残す）
+BASELINE_DAYS = 7
+BASELINE_MIN_DAYS = 3
+BASELINE_SPIKE = 2.0
+
+
+def _qualifying(items: list[Item], min_items: int, min_sources: int) -> list[Trend]:
     by_term: dict[str, list[Item]] = defaultdict(list)
     forms: dict[str, list[tuple[str, bool]]] = defaultdict(list)
     for it in items:
@@ -90,13 +97,40 @@ def detect_trends(items: list[Item], *, min_items: int = 5, min_sources: int = 3
             continue
         label = Counter(f for f, _ in forms[key] if f.lower() == key).most_common(1)[0][0]
         candidates.append(Trend(term=key, label=label, item_ids=[it.id for it in its], sources=sources))
+    return candidates
+
+
+def baseline_terms(
+    past_days: list[list[Item]], *, min_items: int = 5, min_sources: int = 3, min_days: int = BASELINE_MIN_DAYS
+) -> dict[str, float]:
+    """過去日ごとのアイテムから、min_days 日以上で話題条件を満たした定番語 → 1 日あたりの平均件数。"""
+    days_by_term: Counter[str] = Counter()
+    count_by_term: Counter[str] = Counter()
+    for items in past_days:
+        for t in _qualifying(items, min_items, min_sources):
+            days_by_term[t.term] += 1
+            count_by_term[t.term] += len(t.item_ids)
+    return {term: count_by_term[term] / len(past_days) for term, n in days_by_term.items() if n >= min_days}
+
+
+def detect_trends(
+    items: list[Item], *, baseline: dict[str, float] | None = None,
+    min_items: int = 5, min_sources: int = 3, top: int = 3,
+) -> list[Trend]:
+    """min_items 件以上・min_sources ソース以上のタイトルに現れる固有名詞を、件数の多い順に top 件。
+    baseline（定番語 → 過去の平均件数）にある語は、今日の件数が平均の BASELINE_SPIKE 倍以上のときだけ残す。"""
+    baseline = baseline or {}
+    candidates = [
+        t for t in _qualifying(items, min_items, min_sources)
+        if t.term not in baseline or len(t.item_ids) >= BASELINE_SPIKE * baseline[t.term]
+    ]
     candidates.sort(key=lambda t: (-len(t.item_ids), -len(t.sources), t.term))
 
     # TypeSafe と Jev のように同じ記事群を指す語は 1 つにまとめる（件数の多い方を残す）
     picked: list[Trend] = []
     for cand in candidates:
         ids = set(cand.item_ids)
-        if any(len(ids & set(p.item_ids)) >= 0.5 * len(ids) for p in picked):
+        if any(len(ids & set(p.item_ids)) >= 0.5 * min(len(ids), len(p.item_ids)) for p in picked):
             continue
         picked.append(cand)
         if len(picked) >= top:

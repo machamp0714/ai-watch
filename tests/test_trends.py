@@ -6,7 +6,7 @@ import jsonschema
 
 from ai_watch.models import Item, TriagedItem
 from ai_watch.render import render_digest, render_digest_data, shown_item_ids
-from ai_watch.trends import Trend, detect_trends
+from ai_watch.trends import Trend, baseline_terms, detect_trends
 from ai_watch.triage import TriageOutcome, build_prompt, promote_popular, promote_trends
 
 
@@ -134,3 +134,39 @@ def test_render_shows_trend_section_without_block_ids():
 def test_render_without_trends_has_no_section():
     md = render_digest(date(2026, 9, 18), {}, TriageOutcome("triaged", [], 0.0), [], total_collected=0)
     assert "今日の話題" not in md
+
+
+def _fable_day(prefix, n=6):
+    return [_item(f"aw-{prefix}{k:06x}", f"Fable 5.1 の話 {k}", ["a", "b", "c"][k % 3]) for k in range(n)]
+
+
+def test_baseline_excludes_perennial_names_but_keeps_spikes():
+    past = [_fable_day(f"{d:02x}") for d in range(4)] + [[]] * 3       # 4/7 日で話題 → 平均 24/7 件
+    baseline = baseline_terms(past)
+    assert set(baseline) == {"fable"} and round(baseline["fable"], 2) == round(24 / 7, 2)
+
+    today = _fable_day("ff") + _jev_items()
+    assert [t.term for t in detect_trends(today, baseline=baseline)] == ["jev"]   # 6 件 < 2 × 3.43
+    spike = _fable_day("fe", n=9) + _jev_items()
+    assert "fable" in {t.term for t in detect_trends(spike, baseline={"fable": 3.0})}   # 9 ≥ 2 × 3
+    assert "fable" not in {t.term for t in detect_trends(spike, baseline={"fable": 5.0})}
+
+
+def test_baseline_needs_min_days():
+    past = [_fable_day("01"), _fable_day("02")] + [[]] * 5
+    assert baseline_terms(past) == {}
+
+
+def test_past_items_reads_previous_days_and_skips_missing_or_broken(tmp_path):
+    from ai_watch.pipeline import _past_items
+
+    def write(day, payload):
+        d = tmp_path / "work" / day
+        d.mkdir(parents=True)
+        (d / "triage.json").write_text(payload)
+
+    write("2026-09-19", json.dumps({"items": [_item("aw-00000001", "Jev").to_dict()], "outcome": {}}))
+    write("2026-09-17", "{broken")
+    write("2026-09-20", json.dumps({"items": [_item("aw-00000002", "today").to_dict()]}))   # 当日は含めない
+    out = _past_items(tmp_path, date(2026, 9, 20), days=3)
+    assert [[it.id for it in items] for items in out] == [["aw-00000001"]]
