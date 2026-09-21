@@ -50,7 +50,11 @@ sources:
     group: en
     queries: [claude, codex, anthropic, openai, llm, "ai agent", "coding agent"]
     min_points: 50
-    top_min_points: 300   # キーワードなしでも取る高得点ストーリー（クエリに無い新しい名前の話題を拾う）
+  - id: hn-top            # キーワードなしの高得点ストーリー（クエリに無い新しい名前の話題を拾う）
+    type: hn_algolia
+    group: en
+    queries: [""]
+    min_points: 300
   - id: reddit-claudeai
     type: rss
     group: en

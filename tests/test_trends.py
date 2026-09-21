@@ -78,6 +78,14 @@ def test_promote_popular_rescues_high_likes_from_noise():
     assert out["aw-2"].category == "noise"
 
 
+def test_promote_popular_skips_keywordless_hn_only_items():
+    items = [_item("aw-1", "Disney+ ads", "hn-top", metrics={"points": 900}),
+             _item("aw-2", "New coding agent", "hn", metrics={"points": 900}, mentions=["hn", "hn-top"])]
+    out = {t.id: t for t in promote_popular([_noise("aw-1"), _noise("aw-2")], items)}
+    assert out["aw-1"].category == "noise"
+    assert out["aw-2"].category == "read"
+
+
 def test_promote_trends_rescues_top_representatives_only():
     items = _jev_items()
     items[1] = _item(items[1].id, items[1].title, "zenn-llm", metrics={"likes": 65})

@@ -39,7 +39,7 @@ def test_hn_dedupes_across_queries_and_falls_back_to_item_url(make_ctx):
     assert "Is it good?" in items[1].excerpt
 
 
-def test_hn_top_min_points_adds_keywordless_high_score_request(make_ctx):
+def test_hn_keywordless_query_fetches_high_score_stories(make_ctx):
     seen = []
 
     def responder(req: httpx.Request) -> httpx.Response:
@@ -49,10 +49,9 @@ def test_hn_top_min_points_adds_keywordless_high_score_request(make_ctx):
                  "num_comments": 300, "created_at_i": 1787000000, "story_text": None}] if q["query"][0] == "" else []
         return httpx.Response(200, content=json.dumps({"hits": hits}).encode())
 
-    cfg = SourceConfig(id="hn", type="hn_algolia", group="en",
-                       params={"queries": ["claude"], "min_points": 50, "top_min_points": 300})
+    cfg = SourceConfig(id="hn-top", type="hn_algolia", group="en", params={"queries": [""], "min_points": 300})
     items = HnAlgoliaAdapter().fetch(cfg, WINDOW, make_ctx(responder))
-    assert seen == [("claude", "points>50"), ("", "points>300")]
+    assert seen == [("", "points>300")]
     assert [i.title for i in items] == ["Jev: a System One model"]
 
 

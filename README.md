@@ -16,7 +16,7 @@ flowchart TD
 
     subgraph C1["1. collect — HTTP のみ / LLM 不使用"]
         direction LR
-        SRC["sources.yaml<br/>公式 6 / EN 7 / JP 7 ソース"] --> AD["adapters<br/>rss・github_releases・github_file_sections<br/>hn_algolia・html_diff・note_search・zenn"]
+        SRC["sources.yaml<br/>公式 6 / EN 8 / JP 7 ソース"] --> AD["adapters<br/>rss・github_releases・github_file_sections<br/>hn_algolia・html_diff・note_search・zenn"]
         AD -->|"ホスト単位で直列化 + 2s delay<br/>ソース単位で例外を隔離 → warnings"| RAW[("data/raw/&lt;date&gt;/&lt;source&gt;.json")]
     end
 
@@ -72,7 +72,7 @@ flowchart TD
     CHECKS --> PULL
 ```
 
-LLM（`claude -p`）を使うのは **x_collect と triage の 2 箇所だけ**。残りの 20 ソースの収集は素の HTTP で、トークンを消費しない。
+LLM（`claude -p`）を使うのは **x_collect と triage の 2 箇所だけ**。残りの 21 ソースの収集は素の HTTP で、トークンを消費しない。
 
 `--dry-run` を付けるとvaultには書かず、`data/work/<date>/digest.md`と`digest.json`へ出力する。
 この場合は`sync_decisions`と`seen.sqlite`への書き込みもスキップする。

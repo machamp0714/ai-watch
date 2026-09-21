@@ -20,6 +20,8 @@ _EXCERPT_CHARS = {"official": 2000}
 
 # 反響の大きい記事は LLM が noise に落としても read に戻す（metrics のキー → 閾値）
 POPULAR_THRESHOLDS = {"likes": 50, "points": 200}
+# 話題を問わず高得点なので反響だけでは昇格させないソース（キーワード検索でも拾われた記事は mentions に残るので昇格する）
+POPULAR_EXCLUDED_SOURCES = {"hn-top"}
 # 話題クラスタごとに noise から救う代表記事の数
 TREND_REPRESENTATIVES = 2
 
@@ -150,7 +152,11 @@ def promote_popular(triaged: list[TriagedItem], items: list[Item]) -> list[Triag
     out = []
     for t in triaged:
         it = by_id.get(t.id)
-        popular = it is not None and any(it.metrics.get(k, 0) >= v for k, v in POPULAR_THRESHOLDS.items())
+        popular = (
+            it is not None
+            and not set(it.mentions) <= POPULAR_EXCLUDED_SOURCES
+            and any(it.metrics.get(k, 0) >= v for k, v in POPULAR_THRESHOLDS.items())
+        )
         if t.category == "noise" and popular:
             t = TriagedItem(id=t.id, category="read", score=45, signals={**t.signals, "attention": 3},
                             reason="反響の大きい記事（自動昇格）", summary=t.summary or _excerpt_summary(it))
