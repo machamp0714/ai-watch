@@ -144,6 +144,8 @@ function layout(title, body, nonce, { compact = false } = {}) {
     .summary-lines { color: var(--muted); margin: 8px 0 12px; padding-left: 20px; }
     .more-summary { color: var(--green); cursor: pointer; }
     .reading-list { display: grid; }
+    .trend { margin-bottom: 16px; }
+    .trend-title { margin: 0 0 8px; font-size: 16px; }
     .reading-item { padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
     .reading-item:last-child { border-bottom: 0; }
     .overflow-more summary { min-height: 44px; width: fit-content; }
@@ -260,6 +262,19 @@ function readingItem(item) {
 }
 
 
+function trendBlock(trend) {
+  const links = (trend.items || []).map((item) => `<article class="reading-item">
+      <h3 class="item-title"><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a></h3>
+      <p class="source">${escapeHtml(item.source)} ↗</p>
+      ${(item.summary || [])[0] ? `<p class="reason">${escapeHtml(item.summary[0])}</p>` : ""}
+    </article>`).join("");
+  return `<div class="trend">
+    <h3 class="trend-title">${escapeHtml(trend.label)} <span class="section-count">${Number(trend.count) || 0}件・${(trend.sources || []).length}ソース</span></h3>
+    <div class="reading-list">${links}</div>
+  </div>`;
+}
+
+
 function section(number, id, title, count, copy, content, open = true) {
   return `<details class="digest-section" id="${id}" data-digest-section ${open ? "open" : ""}>
     <summary class="section-summary"><span class="section-number">${number}</span><span class="section-title">${title}</span><span class="section-count">${count}件</span></summary>
@@ -329,6 +344,7 @@ export function renderDigestPage(digest, checkStates, nonce) {
   const sections = digest.sections || {};
   const state = (id) => checkStates.get(id)?.checked === true;
   const overflow = sections.overflow || [];
+  const trends = digest.trends || [];
   const overflowVisible = overflow.slice(0, 3);
   const overflowRest = overflow.slice(3);
   const warnings = (digest.warnings || []).map((warning) => escapeHtml(warning)).join(" / ");
@@ -337,6 +353,7 @@ export function renderDigestPage(digest, checkStates, nonce) {
       <a class="button" href="/">← 日付一覧</a>
       <div class="sidebar-date">${escapeHtml(parts.full)}</div>
       <nav class="toc" aria-label="ページ内の目次">
+        ${trends.length ? `<a href="#trends">今日の話題 <span>${trends.length}</span></a>` : ""}
         <a href="#try">試す候補 <span>${amount.try}</span></a>
         <a href="#update">公式アップデート <span>${amount.update}</span></a>
         <a href="#read">読む <span>${amount.read}</span></a>
@@ -358,6 +375,7 @@ export function renderDigestPage(digest, checkStates, nonce) {
         ${digest.mode === "untriaged" ? '<div class="untriaged" role="status">トリアージ失敗・metrics 順で表示しています。</div>' : ""}
         ${warnings ? `<div class="warning" role="status">取得警告: ${warnings}</div>` : ""}
       </header>
+      ${trends.length ? section("00", "trends", "今日の話題", trends.length, "複数のソースで同時に話題になっている固有名詞と、その代表記事。", trends.map(trendBlock).join("")) : ""}
       ${section("01", "try", "試す候補", amount.try, "手を動かして確かめたい記事。チェックすると backlog への追加を予約します。", `<div class="cards">${(sections.try || []).map((item, index) => tryCard(item, date, state(item.id), index === 0)).join("")}</div>`)}
       ${section("02", "update", "公式アップデート", amount.update, "発信したい更新にチェックすると、X 投稿待ちへの追加を予約します。", `<div class="updates">${(sections.update || []).map((item) => updateRow(item, date, state(item.id))).join("")}</div>`)}
       ${section("03", "read", "読む", amount.read, "じっくり読んでおきたい記事。タイトルから元の記事を開けます。", `<div class="reading-list">${(sections.read || []).map(readingItem).join("")}</div>`)}

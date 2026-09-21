@@ -591,3 +591,31 @@ def test_rerun_from_triage_uses_new_watchlist_but_render_does_not_retriage(tmp_p
         runner=runner, http=None, notifier=lambda *args: None,
     )
     assert len(runner.prompts) == 2
+
+
+def test_retriage_rejudges_saved_items_without_touching_seen(tmp_path):
+    s = _settings(tmp_path)
+    runner = FakeRunner()
+    run_nightly(s, DAY, now=NOW, runner=runner, http=_http(), notifier=lambda t, m: None)
+    seen_db = s.data_dir / "seen.sqlite"
+    with sqlite3.connect(seen_db) as con:
+        before = sorted(con.execute("SELECT * FROM seen").fetchall())
+    first_triage = json.loads((s.data_dir / "work" / DAY.isoformat() / "triage.json").read_text())
+
+    r = run_nightly(s, DAY, from_stage="triage", retriage=True, now=NOW, runner=runner, http=None,
+                    notifier=lambda t, m: None)
+    assert runner.calls == 2 and r.new == 2
+    with sqlite3.connect(seen_db) as con:
+        assert sorted(con.execute("SELECT * FROM seen").fetchall()) == before
+    backup = s.data_dir / "work" / DAY.isoformat() / "triage.before-retriage.json"
+    assert json.loads(backup.read_text()) == first_triage
+
+    run_nightly(s, DAY, from_stage="triage", retriage=True, now=NOW, runner=runner, http=None,
+                notifier=lambda t, m: None)
+    assert json.loads(backup.read_text()) == first_triage          # 2 回目でも最初の結果を残す
+
+
+def test_retriage_requires_triage_stage(tmp_path):
+    with pytest.raises(ValueError):
+        run_nightly(_settings(tmp_path), DAY, from_stage="render", retriage=True, now=NOW,
+                    runner=FakeRunner(), http=None, notifier=lambda t, m: None)

@@ -8,6 +8,33 @@
     "items_shown": {"type": "integer", "minimum": 0},
     "cost_usd": {"type": "number", "minimum": 0},
     "warnings": {"type": "array", "items": {"type": "string"}},
+    "trends": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "label": {"type": "string"},
+          "count": {"type": "integer", "minimum": 0},
+          "sources": {"type": "array", "items": {"type": "string"}},
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {"type": "string"},
+                "url": {"type": "string"},
+                "source": {"type": "string"},
+                "summary": {"type": "array", "items": {"type": "string"}}
+              },
+              "required": ["title", "url", "source", "summary"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["label", "count", "sources", "items"],
+        "additionalProperties": false
+      }
+    },
     "sections": {
       "type": "object",
       "properties": {

@@ -43,6 +43,7 @@ def cmd_nightly(settings: Settings, args: argparse.Namespace) -> int:
         from_stage=args.from_stage,
         dry_run=args.dry_run,
         skip_x_collect=args.skip_x_collect,
+        retriage=args.retriage,
     )
     print(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
     return 0
@@ -98,6 +99,8 @@ def build_parser() -> argparse.ArgumentParser:
     n.add_argument("--date", help="YYYY-MM-DD（既定: 今日 JST）")
     n.add_argument("--from", dest="from_stage", default="collect", help=f"途中から再実行: {', '.join(STAGES)}")
     n.add_argument("--dry-run", action="store_true", help="vault に書かず data/work/ にダイジェストを出す")
+    n.add_argument("--retriage", action="store_true",
+                   help="過去日の選別をやり直す（--from triage と併用。当日のアイテムを再判定し seen は更新しない）")
     n.add_argument("--skip-x-collect", action="store_true", help="X収集を行わず空の段階結果を保存")
     n.set_defaults(func=cmd_nightly)
 

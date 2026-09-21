@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, dataclass, field
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
@@ -19,6 +19,7 @@ from .normalize import item_id, normalize
 from .notify import log_line, notify
 from .render import Limits, render_digest, render_digest_data, shown_item_ids
 from .seen import SeenStore
+from .trends import BASELINE_DAYS, baseline_terms
 from .triage import TriageOutcome, triage
 from .vault import Vault
 from .watchlist import source_is_enabled, watchlist_profile
@@ -87,6 +88,18 @@ class NightlyReport:
         return asdict(self)
 
 
+def _past_items(data_dir: Path, day: date, days: int = BASELINE_DAYS) -> list[list[Item]]:
+    """話題のベースライン用に、前日から days 日分の triage 済みアイテム（無い日・壊れた日は飛ばす）。"""
+    out: list[list[Item]] = []
+    for n in range(1, days + 1):
+        path = data_dir / "work" / (day - timedelta(days=n)).isoformat() / "triage.json"
+        try:
+            out.append([Item.from_dict(d) for d in json.loads(path.read_text(encoding="utf-8"))["items"]])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    return out
+
+
 class Work:
     """data/work/YYYY-MM-DD/ に段ごとの出力を置き、--from で途中から再実行できるようにする。"""
 
@@ -119,12 +132,14 @@ def _carry_over_checks(md: str, ids: set[str]) -> str:
 
 def run_nightly(
     settings: Settings, day: date, *, from_stage: str = "collect", dry_run: bool = False,
-    skip_x_collect: bool = False,
+    skip_x_collect: bool = False, retriage: bool = False,
     now: datetime | None = None, runner: Any | None = None, http: Any | None = None,
     notifier: Callable[[str, str], None] = notify,
 ) -> NightlyReport:
     if from_stage not in STAGES:
         raise ValueError(f"unknown stage '{from_stage}' (choose from {STAGES})")
+    if retriage and from_stage != "triage":
+        raise ValueError("retriage は from_stage='triage' でのみ使える")
     start = STAGES.index(from_stage)
     now = now or datetime.now(timezone.utc)
     work = Work(settings.data_dir, day)
@@ -196,7 +211,15 @@ def run_nightly(
         all_items = normalize(raws, settings.source_groups())
         seen_path = settings.data_dir / "seen.sqlite"
         if start <= STAGES.index("triage"):
-            if dry_run and not seen_path.exists():
+            previous = work.load("triage") if retriage else None
+            if retriage:
+                # 過去日の選別やり直し: seen は後日分の状態も含むので使わず、当日選別したアイテムをそのまま再判定する
+                if previous is None:
+                    raise FileNotFoundError(f"retriage: missing {work.path('triage')}")
+                if not work.path("triage.before-retriage").exists():   # 2 回目以降も最初の結果を残す
+                    work.save("triage.before-retriage", previous)
+                new_items = [Item.from_dict(d) for d in previous["items"]]
+            elif dry_run and not seen_path.exists():
                 new_items = list(all_items)
             else:
                 with SeenStore(seen_path, migrate_schema=not dry_run) as seen:
@@ -210,7 +233,8 @@ def run_nightly(
             if extra_profile:
                 profile_md = profile_md.rstrip() + "\n\n" + extra_profile
             outcome = triage(new_items, profile_md=profile_md, decisions=store.recent(30),
-                             runner=runner, root=settings.root, day=day)
+                             runner=runner, root=settings.root, day=day,
+                             trend_baseline=baseline_terms(_past_items(settings.data_dir, day)))
             work.save("triage", {"items": [i.to_dict() for i in new_items], "outcome": outcome.to_dict()})
         t_data = work.load("triage") or {"items": [], "outcome": TriageOutcome("triaged", [], 0.0).to_dict()}
         new_items = [Item.from_dict(d) for d in t_data["items"]]
@@ -254,7 +278,7 @@ def run_nightly(
             warnings=warnings, cost_usd=outcome.cost_usd, digest_path=str(digest_path),
             decisions_added=decisions_added, n_try=len(try_ids), try_ids=try_ids,
         )
-        if not dry_run:
+        if not dry_run and not retriage:
             with SeenStore(seen_path) as seen:
                 seen.mark(
                     new_items,

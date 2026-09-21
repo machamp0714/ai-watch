@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import json
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from pathlib import Path
 from typing import Any, Literal
 
 from .models import Decision, Item, TriagedItem
+from .trends import Trend, detect_trends
 
 Mode = Literal["triaged", "untriaged"]
 
@@ -17,6 +18,13 @@ ALWAYS_UPDATE_SOURCES = {"claude-code-changelog", "codex-releases"}
 # プロンプトに載せる excerpt の上限。公式（changelog / release notes）は要約の材料なので長めに渡す
 _EXCERPT_CHARS = {"official": 2000}
 
+# 反響の大きい記事は LLM が noise に落としても read に戻す（metrics のキー → 閾値）
+POPULAR_THRESHOLDS = {"likes": 50, "points": 200}
+# 話題を問わず高得点なので反響だけでは昇格させないソース（キーワード検索でも拾われた記事は mentions に残るので昇格する）
+POPULAR_EXCLUDED_SOURCES = {"hn-top"}
+# 話題クラスタごとに noise から救う代表記事の数
+TREND_REPRESENTATIVES = 2
+
 
 @dataclass
 class TriageOutcome:
@@ -24,15 +32,17 @@ class TriageOutcome:
     triaged: list[TriagedItem]
     cost_usd: float
     error: str = ""
+    trends: list[Trend] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {"mode": self.mode, "triaged": [t.to_dict() for t in self.triaged],
-                "cost_usd": self.cost_usd, "error": self.error}
+                "cost_usd": self.cost_usd, "error": self.error, "trends": [t.to_dict() for t in self.trends]}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> "TriageOutcome":
         return cls(mode=d["mode"], triaged=[TriagedItem.from_dict(t) for t in d["triaged"]],
-                   cost_usd=float(d["cost_usd"]), error=d.get("error", ""))
+                   cost_usd=float(d["cost_usd"]), error=d.get("error", ""),
+                   trends=[Trend.from_dict(t) for t in d.get("trends", [])])
 
 
 def _items_payload(items: list[Item]) -> list[dict[str, Any]]:
@@ -49,11 +59,25 @@ def _decisions_text(decisions: list[Decision]) -> str:
     return "\n".join(f"- [{d.decision}] {d.title} ({d.url})" for d in decisions)
 
 
-def build_prompt(template: str, items: list[Item], profile_md: str, decisions: list[Decision], day: date) -> str:
+def _trends_text(trends: list[Trend]) -> str:
+    if not trends:
+        return "（今日は目立った話題クラスタはありません）"
+    return "\n".join(
+        f"- {t.label}: {len(t.item_ids)} 件・{len(t.sources)} ソース（{', '.join(t.sources)}）"
+        f" ids={', '.join(t.item_ids)}"
+        for t in trends
+    )
+
+
+def build_prompt(
+    template: str, items: list[Item], profile_md: str, decisions: list[Decision], day: date,
+    trends: list[Trend] | None = None,
+) -> str:
     return (
         template.replace("{{DATE}}", day.isoformat())
         .replace("{{PROFILE}}", profile_md.strip())
         .replace("{{DECISIONS}}", _decisions_text(decisions))
+        .replace("{{TRENDS}}", _trends_text(trends or []))
         .replace("{{ITEMS}}", json.dumps(_items_payload(items), ensure_ascii=False))
     )
 
@@ -113,6 +137,52 @@ def promote_official(triaged: list[TriagedItem], items: list[Item]) -> list[Tria
     return out
 
 
+def _popularity(it: Item) -> int:
+    return sum(max(0, v) for v in it.metrics.values()) + 10 * (len(it.mentions) - 1)
+
+
+def _excerpt_summary(it: Item) -> str:
+    first = next((l.strip(" -*") for l in it.excerpt.splitlines() if l.strip()), "")
+    return first[:100]
+
+
+def promote_popular(triaged: list[TriagedItem], items: list[Item]) -> list[TriagedItem]:
+    """POPULAR_THRESHOLDS を超える反響の記事が noise なら read（score 45）に戻す。"""
+    by_id = {it.id: it for it in items}
+    out = []
+    for t in triaged:
+        it = by_id.get(t.id)
+        popular = (
+            it is not None
+            and not set(it.mentions) <= POPULAR_EXCLUDED_SOURCES
+            and any(it.metrics.get(k, 0) >= v for k, v in POPULAR_THRESHOLDS.items())
+        )
+        if t.category == "noise" and popular:
+            t = TriagedItem(id=t.id, category="read", score=45, signals={**t.signals, "attention": 3},
+                            reason="反響の大きい記事（自動昇格）", summary=t.summary or _excerpt_summary(it))
+        out.append(t)
+    return out
+
+
+def promote_trends(triaged: list[TriagedItem], items: list[Item], trends: list[Trend]) -> list[TriagedItem]:
+    """話題クラスタの上位 TREND_REPRESENTATIVES 件（LLM の score → 反響順）が noise なら read（score 50）に戻す。"""
+    by_id = {it.id: it for it in items}
+    by_tid = {t.id: t for t in triaged}
+    promote: set[str] = set()
+    for trend in trends:
+        members = [i for i in trend.item_ids if i in by_id and i in by_tid]
+        members.sort(key=lambda i: (by_tid[i].score, _popularity(by_id[i])), reverse=True)
+        promote.update(i for i in members[:TREND_REPRESENTATIVES] if by_tid[i].category == "noise")
+    out = []
+    for t in triaged:
+        if t.id in promote:
+            it = by_id[t.id]
+            t = TriagedItem(id=t.id, category="read", score=50, signals={**t.signals, "attention": 3},
+                            reason="今日の話題クラスタの代表（自動昇格）", summary=t.summary or _excerpt_summary(it))
+        out.append(t)
+    return out
+
+
 def fallback_rank(items: list[Item]) -> list[TriagedItem]:
     """LLM が使えない日の順位付け: log(metrics 合計) と mentions 数。全て read。"""
     def score(it: Item) -> int:
@@ -126,16 +196,18 @@ def fallback_rank(items: list[Item]) -> list[TriagedItem]:
 
 def triage(
     items: list[Item], *, profile_md: str, decisions: list[Decision], runner: Any, root: Path, day: date,
-    budget_usd: float = 2.0,
+    budget_usd: float = 2.0, trend_baseline: dict[str, float] | None = None,
 ) -> TriageOutcome:
     if not items:
         return TriageOutcome("triaged", [], 0.0)
     template = (root / "prompts" / "triage.md").read_text(encoding="utf-8")
     schema = json.loads((root / "schemas" / "triage.schema.json").read_text(encoding="utf-8"))
-    prompt = build_prompt(template, items, profile_md, decisions, day)
+    trends = detect_trends(items, baseline=trend_baseline)
+    prompt = build_prompt(template, items, profile_md, decisions, day, trends)
     res = runner.run(prompt, schema, budget_usd=budget_usd, effort="low", retries=1)
     if not res.ok:
-        return TriageOutcome("untriaged", fallback_rank(items), res.cost_usd, res.error)
+        return TriageOutcome("untriaged", fallback_rank(items), res.cost_usd, res.error, trends)
     groups = {it.id: it.group for it in items}
     triaged = promote_official(parse_triage(res.data, [it.id for it in items], groups=groups), items)
-    return TriageOutcome("triaged", triaged, res.cost_usd)
+    triaged = promote_trends(promote_popular(triaged, items), items, trends)
+    return TriageOutcome("triaged", triaged, res.cost_usd, trends=trends)
