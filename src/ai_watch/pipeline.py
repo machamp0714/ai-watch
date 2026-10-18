@@ -80,7 +80,7 @@ def _split_below_min_likes(
     held: list[Item] = []
     for item in items:
         below = all(
-            source in floors and item.metrics.get("likes", 0) < floors[source]
+            source in floors and "likes" in item.metrics and item.metrics["likes"] < floors[source]
             for source in item.mentions
         )
         (held if item.mentions and below else kept).append(item)

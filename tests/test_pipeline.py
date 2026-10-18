@@ -658,3 +658,25 @@ def test_nightly_holds_zenn_articles_below_min_likes_until_they_reach_it(tmp_pat
     assert first.new == 0 and runner.calls == 1
     assert row["category"] == "noise" and row["shown_on"] is None
     assert second.new == 1 and second.shown == 1
+
+
+def test_split_below_min_likes_keeps_unknown_likes_and_items_seen_elsewhere(tmp_path):
+    from ai_watch.models import Item
+    from ai_watch.pipeline import _split_below_min_likes
+
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(id="zenn", type="zenn", group="jp", params={"min_likes": 30})]
+
+    def item(iid, metrics, mentions):
+        return Item(id=iid, url=f"https://zenn.dev/a/articles/{iid}", title=iid, excerpt="",
+                    published_at=None, metrics=metrics, lang="ja", group="jp", source="zenn",
+                    mentions=mentions)
+
+    small = item("small", {"likes": 12}, ["zenn"])
+    rss_only = item("rss", {}, ["zenn"])          # API が落ちて RSS に切り替えた夜は likes が無い
+    elsewhere = item("hatena", {"likes": 12}, ["zenn", "hatena-it-hot"])
+
+    kept, held = _split_below_min_likes(settings, [small, rss_only, elsewhere])
+
+    assert held == [small]
+    assert kept == [rss_only, elsewhere]
