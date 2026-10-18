@@ -66,6 +66,27 @@ def _recheck_zenn_popularity(
     ]
 
 
+def _split_below_min_likes(
+    settings: Settings, items: list[Item]
+) -> tuple[list[Item], list[Item]]:
+    """min_likes を設定したソースだけで見つかり、likes が下限未満のアイテムを triage から外す。
+    外したアイテムは noise として seen に記録し、Zenn の人気度再確認の対象に残す。"""
+    floors = {
+        source.id: int(source.params["min_likes"])
+        for source in settings.sources
+        if "min_likes" in source.params
+    }
+    kept: list[Item] = []
+    held: list[Item] = []
+    for item in items:
+        below = all(
+            source in floors and item.metrics.get("likes", 0) < floors[source]
+            for source in item.mentions
+        )
+        (held if item.mentions and below else kept).append(item)
+    return kept, held
+
+
 def today_jst(now: datetime | None = None) -> date:
     return (now or datetime.now(timezone.utc)).astimezone(JST).date()
 
@@ -228,6 +249,10 @@ def run_nightly(
                         day,
                         popularity_sources=popularity_sources,
                     )
+            if retriage:
+                held_items = [Item.from_dict(d) for d in previous.get("held_items", [])]
+            else:
+                new_items, held_items = _split_below_min_likes(settings, new_items)
             profile_md = vault.read_profile()
             extra_profile = watchlist_profile(settings.watchlist)
             if extra_profile:
@@ -235,9 +260,14 @@ def run_nightly(
             outcome = triage(new_items, profile_md=profile_md, decisions=store.recent(30),
                              runner=runner, root=settings.root, day=day,
                              trend_baseline=baseline_terms(_past_items(settings.data_dir, day)))
-            work.save("triage", {"items": [i.to_dict() for i in new_items], "outcome": outcome.to_dict()})
+            work.save("triage", {
+                "items": [i.to_dict() for i in new_items],
+                "outcome": outcome.to_dict(),
+                "held_items": [i.to_dict() for i in held_items],
+            })
         t_data = work.load("triage") or {"items": [], "outcome": TriageOutcome("triaged", [], 0.0).to_dict()}
         new_items = [Item.from_dict(d) for d in t_data["items"]]
+        held_items = [Item.from_dict(d) for d in t_data.get("held_items", [])]
         outcome = TriageOutcome.from_dict(t_data["outcome"])
 
         # 5. render + finalize -----------------------------------------------------
@@ -281,10 +311,10 @@ def run_nightly(
         if not dry_run and not retriage:
             with SeenStore(seen_path) as seen:
                 seen.mark(
-                    new_items,
+                    new_items + held_items,
                     day,
                     shown,
-                    {t.id: t.category for t in outcome.triaged},
+                    {t.id: t.category for t in outcome.triaged} | {i.id: "noise" for i in held_items},
                     popularity_sources=popularity_sources,
                 )
             vault.append_line(vault.log, log_line(day, collected=report.collected, new=report.new, n_try=report.n_try,

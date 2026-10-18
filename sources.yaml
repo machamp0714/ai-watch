@@ -43,6 +43,46 @@ sources:
     type: rss
     group: official
     url: https://blog.google/technology/ai/rss/
+  - id: claude-dev-blog          # Claude Code チームの実践記事（claude.com/blog の技術記事もここに移った）
+    type: rss
+    group: official
+    url: https://claude.dev/rss.xml
+  - id: anthropic-engineering    # /news からはリンクされないため別に見る
+    type: html_diff
+    group: official
+    url: https://www.anthropic.com/engineering
+    link_pattern: 'anthropic\.com/engineering/[a-z0-9-]+'
+  - id: anthropic-research
+    type: html_diff
+    group: official
+    url: https://www.anthropic.com/research
+    link_pattern: 'anthropic\.com/research/[a-z0-9-]+'
+  - id: claude-customers         # 導入事例
+    type: html_diff
+    group: official
+    url: https://claude.com/customers
+    link_pattern: 'claude\.com/customers/[a-z0-9-]+'
+  - id: deepmind-blog
+    type: rss
+    group: official
+    url: https://deepmind.google/blog/rss.xml
+  - id: github-ai-blog
+    type: rss
+    group: official
+    url: https://github.blog/ai-and-ml/feed/
+  - id: cursor-changelog
+    type: rss
+    group: official
+    url: https://cursor.com/changelog/rss.xml
+  - id: amp-news
+    type: rss
+    group: official
+    url: https://ampcode.com/news.rss
+  - id: cognition-blog           # Devin。開発事例・事業の数字が出る
+    type: html_diff
+    group: official
+    url: https://cognition.ai/blog
+    link_pattern: 'cognition\.ai/blog/[a-z0-9-]+'
 
   # ---- EN コミュニティ ----
   - id: hn
@@ -55,22 +95,6 @@ sources:
     group: en
     queries: [""]
     min_points: 300
-  - id: reddit-claudeai
-    type: rss
-    group: en
-    url: https://www.reddit.com/r/ClaudeAI/top.rss?t=day
-  - id: reddit-claudecode
-    type: rss
-    group: en
-    url: https://www.reddit.com/r/ClaudeCode/top.rss?t=day
-  - id: reddit-localllama
-    type: rss
-    group: en
-    url: https://www.reddit.com/r/LocalLLaMA/top.rss?t=day
-  - id: reddit-openai
-    type: rss
-    group: en
-    url: https://www.reddit.com/r/OpenAI/top.rss?t=day
   - id: simonwillison
     type: rss
     group: en
@@ -79,6 +103,43 @@ sources:
     type: rss
     group: en
     url: https://www.latent.space/feed
+  # 海外エンジニア・アナリストの発信（X の代わりに本人のブログ/ニュースレターを見る）
+  - id: interconnects            # Nathan Lambert
+    type: rss
+    group: en
+    url: https://www.interconnects.ai/feed
+  - id: pragmatic-engineer       # Gergely Orosz
+    type: rss
+    group: en
+    url: https://newsletter.pragmaticengineer.com/feed
+  - id: one-useful-thing         # Ethan Mollick。業務での活用
+    type: rss
+    group: en
+    url: https://www.oneusefulthing.org/feed
+  - id: stratechery              # Ben Thompson。事業・戦略
+    type: rss
+    group: en
+    url: https://stratechery.com/feed/
+  - id: addy-osmani
+    type: rss
+    group: en
+    url: https://addyo.substack.com/feed
+  - id: hamel
+    type: rss
+    group: en
+    url: https://hamel.dev/index.xml
+  - id: eugene-yan
+    type: rss
+    group: en
+    url: https://eugeneyan.com/rss/
+  - id: karpathy
+    type: rss
+    group: en
+    url: https://karpathy.bearblog.dev/feed/
+  - id: steve-yegge
+    type: rss
+    group: en
+    url: https://steve-yegge.medium.com/feed
 
   # ---- JP コミュニティ ----
   - id: zenn-claudecode
@@ -88,6 +149,7 @@ sources:
     url: https://zenn.dev/topics/claudecode/feed
     size: 20
     recheck_popularity: true
+    min_likes: 30   # 未満は triage に回さず、再確認で 30 に届いたら出す
     lang: ja
   - id: zenn-codex
     type: zenn
@@ -96,6 +158,7 @@ sources:
     url: https://zenn.dev/topics/codex/feed
     size: 20
     recheck_popularity: true
+    min_likes: 30   # 未満は triage に回さず、再確認で 30 に届いたら出す
     lang: ja
   - id: zenn-llm
     type: zenn
@@ -104,6 +167,7 @@ sources:
     url: https://zenn.dev/topics/llm/feed
     size: 20
     recheck_popularity: true
+    min_likes: 30   # 未満は triage に回さず、再確認で 30 に届いたら出す
     lang: ja
   - id: hatena-claudecode
     type: rss
