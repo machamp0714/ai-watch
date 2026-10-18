@@ -11,6 +11,7 @@ from ai_watch.adapters import ADAPTERS
 from ai_watch.claude_runner import ClaudeResult
 from ai_watch.config import Settings, SourceConfig
 from ai_watch.models import RawItem
+from ai_watch.normalize import item_id
 from ai_watch.pipeline import STAGES, run_nightly, today_jst
 from ai_watch.seen import SeenStore
 from ai_watch.vault import Vault
@@ -619,3 +620,63 @@ def test_retriage_requires_triage_stage(tmp_path):
     with pytest.raises(ValueError):
         run_nightly(_settings(tmp_path), DAY, from_stage="render", retriage=True, now=NOW,
                     runner=FakeRunner(), http=None, notifier=lambda t, m: None)
+
+
+def test_nightly_holds_zenn_articles_below_min_likes_until_they_reach_it(tmp_path, monkeypatch):
+    class GrowingAdapter:
+        likes = 12
+
+        def fetch(self, cfg, window, ctx):
+            return [RawItem(
+                source=cfg.id,
+                url="https://zenn.dev/sample/articles/small",
+                title="反響の少ない架空記事",
+                published_at=datetime(2026, 8, 22, tzinfo=timezone.utc),
+                metrics={"likes": self.likes},
+                lang="ja",
+            )]
+
+    adapter = GrowingAdapter()
+    monkeypatch.setitem(ADAPTERS, "growing_zenn", adapter)
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(
+        id="zenn",
+        type="growing_zenn",
+        group="jp",
+        params={"recheck_popularity": True, "min_likes": 30},
+    )]
+    runner = FakeRunner()
+
+    first = run_nightly(settings, DAY, now=NOW, runner=runner, http=_http(), notifier=lambda *args: None)
+    with SeenStore(settings.data_dir / "seen.sqlite") as seen:
+        row = seen.get(item_id("https://zenn.dev/sample/articles/small"))
+    adapter.likes = 30
+    second = run_nightly(
+        settings, date(2026, 8, 24), now=NOW, runner=runner, http=_http(), notifier=lambda *args: None,
+    )
+
+    assert first.new == 0 and runner.calls == 1
+    assert row["category"] == "noise" and row["shown_on"] is None
+    assert second.new == 1 and second.shown == 1
+
+
+def test_split_below_min_likes_keeps_unknown_likes_and_items_seen_elsewhere(tmp_path):
+    from ai_watch.models import Item
+    from ai_watch.pipeline import _split_below_min_likes
+
+    settings = _settings(tmp_path)
+    settings.sources = [SourceConfig(id="zenn", type="zenn", group="jp", params={"min_likes": 30})]
+
+    def item(iid, metrics, mentions):
+        return Item(id=iid, url=f"https://zenn.dev/a/articles/{iid}", title=iid, excerpt="",
+                    published_at=None, metrics=metrics, lang="ja", group="jp", source="zenn",
+                    mentions=mentions)
+
+    small = item("small", {"likes": 12}, ["zenn"])
+    rss_only = item("rss", {}, ["zenn"])          # API が落ちて RSS に切り替えた夜は likes が無い
+    elsewhere = item("hatena", {"likes": 12}, ["zenn", "hatena-it-hot"])
+
+    kept, held = _split_below_min_likes(settings, [small, rss_only, elsewhere])
+
+    assert held == [small]
+    assert kept == [rss_only, elsewhere]
