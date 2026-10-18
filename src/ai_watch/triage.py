@@ -106,7 +106,7 @@ def parse_triage(data: dict[str, Any], known_ids: list[str], groups: dict[str, s
             continue
         signals = row.get("signals") or {}
         cat = row.get("category")
-        category = cat if cat in ("update", "try", "read", "noise") else "noise"
+        category = cat if cat in ("update", "try", "read", "industry", "noise") else "noise"
         if groups is not None and category == "update" and groups.get(iid) != "official":
             category = "read"
         out[iid] = TriagedItem(
@@ -115,6 +115,7 @@ def parse_triage(data: dict[str, Any], known_ids: list[str], groups: dict[str, s
             reason=str(row.get("reason") or ""), try_plan=str(row.get("try_plan") or ""),
             article_angle=str(row.get("article_angle") or ""),
             summary=str(row.get("summary") or ""),
+            implication=str(row.get("implication") or ""),
         )
     for iid in known_ids:
         if iid not in out:

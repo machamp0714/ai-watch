@@ -213,3 +213,24 @@ def test_link_percent_encodes_parentheses():
     md = render_digest(date(2026, 8, 22), items, outcome, [], total_collected=1)
     assert "(https://en.wikipedia.org/wiki/Rust_%28programming_language%29)" in md
     assert shown_item_ids(md) == {"aw-00000001"}
+
+
+def test_industry_section_shows_implication_and_overflows_beyond_limit():
+    items = {f"aw-{n:08d}": _item(f"aw-{n:08d}", f"Industry {n}") for n in range(1, 6)}
+    triaged = [_t(f"aw-{n:08d}", "industry", 90 - n) for n in range(1, 6)]
+    triaged[0].summary = "導入規模が 1 万人に"
+    triaged[0].implication = "社内導入が全社展開の段階に入った\n事例記事の需要が増える"
+    outcome = TriageOutcome("triaged", triaged, 0.1)
+
+    md = render_digest(date(2026, 8, 22), items, outcome, [], total_collected=5)
+    data = render_digest_data(date(2026, 8, 22), items, outcome, [], total_collected=5)
+
+    assert "## 🧭 業界の動き\n\n| 記事 | ソース | 要約 | 示唆・次の一手 |\n|---|---|---|---|\n" in md
+    assert "| **Industry 1** | [hn](https://e.com/aw-00000001) | 導入規模が 1 万人に | 社内導入が全社展開の段階に入った / 事例記事の需要が増える %%^aw-00000001%% |" in md
+    assert "新着はありませんでした" not in md
+    assert [i["id"] for i in data["sections"]["industry"]] == [f"aw-{n:08d}" for n in range(1, 5)]
+    assert [i["id"] for i in data["sections"]["overflow"]] == ["aw-00000005"]
+    assert data["sections"]["industry"][0]["implication"] == "社内導入が全社展開の段階に入った / 事例記事の需要が増える"
+    assert shown_item_ids(md) == set(items)
+    schema = json.loads((Path(__file__).resolve().parents[1] / "schemas" / "digest.schema.json").read_text())
+    jsonschema.validate(data, schema)

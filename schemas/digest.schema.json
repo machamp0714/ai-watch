@@ -41,6 +41,7 @@
         "try": {"$ref": "#/$defs/items"},
         "update": {"$ref": "#/$defs/items"},
         "read": {"$ref": "#/$defs/items"},
+        "industry": {"$ref": "#/$defs/items"},
         "overflow": {"$ref": "#/$defs/items"}
       },
       "required": ["try", "update", "read", "overflow"],
@@ -68,6 +69,7 @@
         "summary": {"type": "array", "items": {"type": "string"}},
         "try_plan": {"type": "string"},
         "article_angle": {"type": "string"},
+        "implication": {"type": "string"},
         "published_at": {"type": ["string", "null"]}
       },
       "required": ["id", "title", "url", "source", "mentions", "lang", "score", "reason", "summary", "try_plan", "article_angle", "published_at"],
