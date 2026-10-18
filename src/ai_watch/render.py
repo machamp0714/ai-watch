@@ -19,6 +19,7 @@ class Limits:
     try_: int = 3
     read: int = 3
     update: int = 5
+    industry: int = 4
     trend_items: int = 3
 
 
@@ -27,6 +28,7 @@ class DigestSelection:
     try_: list[tuple[Item, TriagedItem]]
     update: list[tuple[Item, TriagedItem]]
     read: list[tuple[Item, TriagedItem]]
+    industry: list[tuple[Item, TriagedItem]]
     overflow: list[tuple[Item, TriagedItem]]
 
 
@@ -94,6 +96,19 @@ def _table(rows: list[tuple[Item, TriagedItem]]) -> list[str]:
     return TABLE_HEADER + [_table_row(it, t) for it, t in rows]
 
 
+def _industry_table(rows: list[tuple[Item, TriagedItem]]) -> list[str]:
+    """記事 / ソース / 要約 / 示唆 の表。ブロック ID は _table_row と同じく %% %% で隠す。"""
+    if not rows:
+        return ["（なし）"]
+    lines = ["| 記事 | ソース | 要約 | 示唆・次の一手 |", "|---|---|---|---|"]
+    for it, t in rows:
+        title = _cell(it.title) or "(no title)"
+        summary = _cell(" ".join(_summary_lines(t)))
+        implication = _cell(_one_line(t.implication))
+        lines.append(f"| **{title}** | [{_src(it)}]({_url(it)}) | {summary} | {implication} %%^{it.id}%% |")
+    return lines
+
+
 def _trend_members(
     trend: Trend, items: dict[str, Item], outcome: TriageOutcome, limit: int
 ) -> list[tuple[Item, TriagedItem | None]]:
@@ -150,17 +165,19 @@ def _select_digest(
             try_=[(items[t.id], t) for t in ranked[:15]],
             update=[],
             read=[],
+            industry=[],
             overflow=[(items[t.id], t) for t in ranked[15:]],
         )
 
-    by_cat: dict[str, list[TriagedItem]] = {"try": [], "update": [], "read": []}
+    by_cat: dict[str, list[TriagedItem]] = {"try": [], "update": [], "read": [], "industry": []}
     for triaged in ranked:
         if triaged.category in by_cat:
             by_cat[triaged.category].append(triaged)
     overflow = sorted(
         by_cat["try"][limits.try_:]
         + by_cat["update"][limits.update:]
-        + by_cat["read"][limits.read:],
+        + by_cat["read"][limits.read:]
+        + by_cat["industry"][limits.industry:],
         key=lambda triaged: triaged.score,
         reverse=True,
     )
@@ -168,6 +185,7 @@ def _select_digest(
         try_=[(items[t.id], t) for t in by_cat["try"][:limits.try_]],
         update=[(items[t.id], t) for t in by_cat["update"][:limits.update]],
         read=[(items[t.id], t) for t in by_cat["read"][:limits.read]],
+        industry=[(items[t.id], t) for t in by_cat["industry"][:limits.industry]],
         overflow=[(items[t.id], t) for t in overflow],
     )
 
@@ -185,6 +203,7 @@ def _digest_item(item: Item, triaged: TriagedItem) -> dict[str, Any]:
         "summary": _summary_lines(triaged),
         "try_plan": _clean(_one_line(triaged.try_plan)),
         "article_angle": _clean(_one_line(triaged.article_angle)),
+        "implication": _clean(_one_line(triaged.implication)),
         "published_at": item.published_at.isoformat() if item.published_at else None,
     }
 
@@ -205,6 +224,9 @@ def render_digest_data(
             _digest_item(item, triaged) for item, triaged in selection.update
         ],
         "read": [_digest_item(item, triaged) for item, triaged in selection.read],
+        "industry": [
+            _digest_item(item, triaged) for item, triaged in selection.industry
+        ],
         "overflow": [
             _digest_item(item, triaged) for item, triaged in selection.overflow
         ],
@@ -255,7 +277,7 @@ def render_digest(
         for item, triaged in selection.try_:
             body += _try_lines(item, triaged)
     else:
-        if not any((selection.try_, selection.update, selection.read)):
+        if not any((selection.try_, selection.update, selection.read, selection.industry)):
             body += ["新着はありませんでした。", ""]
         body += ["## 🧪 試す候補（[x] で backlog へ）"]
         for item, triaged in selection.try_:
@@ -266,6 +288,8 @@ def render_digest(
                 body += _update_lines(item, triaged)
         else:
             body += ["（なし。新しい公式リリースはありませんでした）"]
+        body += ["", "## 🧭 業界の動き", ""]
+        body += _industry_table(selection.industry)
         body += ["", "## 📖 読む", ""]
         body += _table(selection.read)
 

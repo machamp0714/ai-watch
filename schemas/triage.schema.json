@@ -7,7 +7,7 @@
         "type": "object",
         "properties": {
           "id": {"type": "string"},
-          "category": {"type": "string", "enum": ["update", "try", "read", "noise"]},
+          "category": {"type": "string", "enum": ["update", "try", "read", "industry", "noise"]},
           "score": {"type": "integer", "minimum": 0, "maximum": 100},
           "signals": {
             "type": "object",
@@ -23,7 +23,8 @@
           "reason": {"type": "string"},
           "try_plan": {"type": "string"},
           "article_angle": {"type": "string"},
-          "summary": {"type": "string"}
+          "summary": {"type": "string"},
+          "implication": {"type": "string"}
         },
         "required": ["id", "category", "score", "signals", "reason"],
         "additionalProperties": false

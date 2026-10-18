@@ -45,7 +45,7 @@ flowchart TD
         DECF["decisions 直近 30 件<br/>（few-shot）"] --> PR
         TRD["今日の話題クラスタ<br/>タイトルの固有名詞 5 件・3 ソース以上<br/>過去 7 日の定番語は急増時のみ"] --> PR
         PR --> LLM["claude -p<br/>model=sonnet / effort=low / budget $2.0"]
-        LLM -->|成功| TR["try / read / update / noise に分類<br/>+ 公式ソースの noise を update へ自動昇格<br/>+ 高反響記事・話題の代表記事を read へ自動昇格"]
+        LLM -->|成功| TR["try / read / industry / update / noise に分類<br/>industry は示唆・次の一手つき<br/>+ 公式ソースの noise を update へ自動昇格<br/>+ 高反響記事・話題の代表記事を read へ自動昇格"]
         LLM -->|"失敗（retry 1 回後）"| FB["fallback_rank<br/>metrics 順 / mode=untriaged"]
     end
 
@@ -54,7 +54,7 @@ flowchart TD
 
     subgraph C5["5. render"]
         direction LR
-        RD["共通の選抜結果<br/>今日の話題 / try 3 / read 3 / update 5 件"] --> MD["digest.md<br/>同日再実行時は既存のチェックを引き継ぐ"]
+        RD["共通の選抜結果<br/>今日の話題 / 業界の動き 4 / try 3 / read 3 / update 5 件"] --> MD["digest.md<br/>同日再実行時は既存のチェックを引き継ぐ"]
         RD --> JSON["digest.json<br/>UI向けの構造化データ"]
     end
 

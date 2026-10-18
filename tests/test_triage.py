@@ -165,3 +165,11 @@ def test_promote_official_turns_noise_release_into_update():
     assert out["aw-1"].summary == "Bug fixes and reliability improvements"
     assert out["aw-2"].category == "update" and out["aw-2"].summary == "（本文なし）"
     assert out["aw-3"].category == "noise"                                    # 対象外ソースは触らない
+
+
+def test_parse_triage_keeps_industry_with_implication_from_any_group():
+    from ai_watch.triage import parse_triage
+    data = {"items": [{"id": "aw-1", "category": "industry", "score": 70, "signals": {}, "reason": "r",
+                       "summary": "s", "implication": "次の一手"}]}
+    result = parse_triage(data, ["aw-1"], groups={"aw-1": "en"})
+    assert result[0].category == "industry" and result[0].implication == "次の一手"

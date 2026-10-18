@@ -148,6 +148,7 @@ function layout(title, body, nonce, { compact = false } = {}) {
     .trend-title { margin: 0 0 8px; font-size: 16px; }
     .reading-item { padding: 0 0 16px; margin-bottom: 16px; border-bottom: 1px solid var(--line); }
     .reading-item:last-child { border-bottom: 0; }
+    .implication { margin: 0; padding: 8px 12px; border-left: 3px solid var(--green); border-radius: 4px; background: var(--bg); }
     .overflow-more summary { min-height: 44px; width: fit-content; }
     .empty-main { max-width: 960px; min-height: 450px; margin: 0 auto; padding: 64px 96px; }
     .empty-icon { color: var(--green); font-size: 40px; }
@@ -198,6 +199,7 @@ function layout(title, body, nonce, { compact = false } = {}) {
 function counts(digest) {
   const sections = digest.sections || {};
   return {
+    industry: sections.industry?.length || 0,
     try: sections.try?.length || 0,
     update: sections.update?.length || 0,
     read: sections.read?.length || 0,
@@ -258,6 +260,16 @@ function readingItem(item) {
     <h3 class="item-title"><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a></h3>
     <p class="source">${sourceLabel(item)} ↗</p>
     <p class="reason">${escapeHtml((item.summary || [])[0] || item.reason)}</p>
+  </article>`;
+}
+
+
+function industryItem(item) {
+  return `<article class="reading-item" data-item-id="${escapeHtml(item.id)}">
+    <h3 class="item-title"><a href="${safeUrl(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(item.title)}</a></h3>
+    <p class="source">${sourceLabel(item)} ↗</p>
+    <p class="reason">${escapeHtml((item.summary || [])[0] || item.reason)}</p>
+    ${item.implication ? `<p class="implication">${escapeHtml(item.implication)}</p>` : ""}
   </article>`;
 }
 
@@ -345,6 +357,7 @@ export function renderDigestPage(digest, checkStates, nonce) {
   const state = (id) => checkStates.get(id)?.checked === true;
   const overflow = sections.overflow || [];
   const trends = digest.trends || [];
+  const hasIndustry = Array.isArray(sections.industry);   // 業界の動き枠より前の digest には出さない
   const overflowVisible = overflow.slice(0, 3);
   const overflowRest = overflow.slice(3);
   const warnings = (digest.warnings || []).map((warning) => escapeHtml(warning)).join(" / ");
@@ -354,6 +367,7 @@ export function renderDigestPage(digest, checkStates, nonce) {
       <div class="sidebar-date">${escapeHtml(parts.full)}</div>
       <nav class="toc" aria-label="ページ内の目次">
         ${trends.length ? `<a href="#trends">今日の話題 <span>${trends.length}</span></a>` : ""}
+        ${hasIndustry ? `<a href="#industry">業界の動き <span>${amount.industry}</span></a>` : ""}
         <a href="#try">試す候補 <span>${amount.try}</span></a>
         <a href="#update">公式アップデート <span>${amount.update}</span></a>
         <a href="#read">読む <span>${amount.read}</span></a>
@@ -368,6 +382,7 @@ export function renderDigestPage(digest, checkStates, nonce) {
         <p class="metrics">${Number(digest.items_total) || 0}件から ${Number(digest.items_shown) || 0}件をピックアップ</p>
         <nav class="mobile-toc" aria-label="カテゴリへ移動">
           <a class="button primary" href="#try">試す候補 <span>${amount.try}</span></a>
+          ${hasIndustry ? `<a class="button" href="#industry">業界 <span>${amount.industry}</span></a>` : ""}
           <a class="button" href="#update">公式更新 <span>${amount.update}</span></a>
           <a class="button" href="#read">読む <span>${amount.read}</span></a>
           <a class="button" href="#overflow">注目 <span>${amount.overflow}</span></a>
@@ -376,10 +391,11 @@ export function renderDigestPage(digest, checkStates, nonce) {
         ${warnings ? `<div class="warning" role="status">取得警告: ${warnings}</div>` : ""}
       </header>
       ${trends.length ? section("00", "trends", "今日の話題", trends.length, "複数のソースで同時に話題になっている固有名詞と、その代表記事。", trends.map(trendBlock).join("")) : ""}
-      ${section("01", "try", "試す候補", amount.try, "手を動かして確かめたい記事。チェックすると backlog への追加を予約します。", `<div class="cards">${(sections.try || []).map((item, index) => tryCard(item, date, state(item.id), index === 0)).join("")}</div>`)}
-      ${section("02", "update", "公式アップデート", amount.update, "発信したい更新にチェックすると、X 投稿待ちへの追加を予約します。", `<div class="updates">${(sections.update || []).map((item) => updateRow(item, date, state(item.id))).join("")}</div>`)}
-      ${section("03", "read", "読む", amount.read, "じっくり読んでおきたい記事。タイトルから元の記事を開けます。", `<div class="reading-list">${(sections.read || []).map(readingItem).join("")}</div>`)}
-      ${section("04", "overflow", "注目", amount.overflow, "気になる話題をまとめて確認。", `<div class="reading-list">${overflowVisible.map(readingItem).join("")}</div>${overflowRest.length ? `<details class="overflow-more"><summary class="button">残り${overflowRest.length}件を表示</summary><div class="reading-list">${overflowRest.map(readingItem).join("")}</div></details>` : ""}`)}
+      ${hasIndustry ? section("01", "industry", "業界の動き", amount.industry, "公式の方針・導入事例・主要プレイヤーの動きと、そこから読める次の一手。", `<div class="reading-list">${sections.industry.map(industryItem).join("")}</div>`) : ""}
+      ${section("02", "try", "試す候補", amount.try, "手を動かして確かめたい記事。チェックすると backlog への追加を予約します。", `<div class="cards">${(sections.try || []).map((item, index) => tryCard(item, date, state(item.id), index === 0)).join("")}</div>`)}
+      ${section("03", "update", "公式アップデート", amount.update, "発信したい更新にチェックすると、X 投稿待ちへの追加を予約します。", `<div class="updates">${(sections.update || []).map((item) => updateRow(item, date, state(item.id))).join("")}</div>`)}
+      ${section("04", "read", "読む", amount.read, "じっくり読んでおきたい記事。タイトルから元の記事を開けます。", `<div class="reading-list">${(sections.read || []).map(readingItem).join("")}</div>`)}
+      ${section("05", "overflow", "注目", amount.overflow, "気になる話題をまとめて確認。", `<div class="reading-list">${overflowVisible.map(readingItem).join("")}</div>${overflowRest.length ? `<details class="overflow-more"><summary class="button">残り${overflowRest.length}件を表示</summary><div class="reading-list">${overflowRest.map(readingItem).join("")}</div></details>` : ""}`)}
       <div class="actions"><a class="button" href="/">← 日付一覧に戻る</a></div>
     </div>
   </main>${clientScript(nonce)}`;
@@ -400,7 +416,7 @@ export function renderListPage(entries, nonce) {
   const latestCard = latest ? `<section class="latest">
     <div class="latest-label">最新のダイジェスト</div>
     <h2>${escapeHtml(dateParts(latest.date).full)}</h2>
-    ${latestCounts ? `<p>試す候補 ${latestCounts.try}件 ・ 公式アップデート ${latestCounts.update}件 ・ 読む ${latestCounts.read}件 ・ 注目 ${latestCounts.overflow}件</p>` : ""}
+    ${latestCounts ? `<p>${latest.digest.sections?.industry ? `業界の動き ${latestCounts.industry}件 ・ ` : ""}試す候補 ${latestCounts.try}件 ・ 公式アップデート ${latestCounts.update}件 ・ 読む ${latestCounts.read}件 ・ 注目 ${latestCounts.overflow}件</p>` : ""}
     <a class="button primary" href="/${latest.date}">↗ 今日の${Number(latest.digest?.items_shown) || 0}件を読む</a>
   </section>` : '<p class="muted">生成済みのダイジェストはありません。</p>';
   return layout("ダイジェスト", `<main class="list-main"><h1>ダイジェスト</h1><p class="lede">日付を選んで、その日に集まった AI の話題を読む。</p>${latestCard}${rows}<p class="footer-note">生成済みの日付を新しい順に表示しています。</p></main>`, nonce, { compact: true });

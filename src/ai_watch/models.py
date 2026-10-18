@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from datetime import date, datetime
 from typing import Any, Literal
 
-Category = Literal["update", "try", "read", "noise"]
+Category = Literal["update", "try", "read", "industry", "noise"]
 DecisionKind = Literal["try", "share", "skip_implicit"]
 
 
@@ -69,6 +69,7 @@ class TriagedItem:
     article_angle: str = ""
     summary: str = ""
     x_draft: str = ""
+    implication: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

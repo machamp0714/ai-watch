@@ -312,3 +312,34 @@ test("trendsが無い旧digestでは今日の話題を出さない", async () =>
   const html = await (await worker.fetch(new Request("https://watch.example/2026-09-12"), env(bucket))).text();
   assert.doesNotMatch(html, /id="trends"/);
 });
+
+test("業界の動きは示唆つきで試す候補より前に描画し、チェックは付けない", async () => {
+  const digest = {
+    ...DIGEST,
+    sections: {
+      ...DIGEST.sections,
+      industry: [
+        {
+          ...DIGEST.sections.read[0],
+          id: "aw-00000009",
+          title: "架空企業の全社導入",
+          implication: "導入が全社展開の段階に <入った>"
+        }
+      ]
+    }
+  };
+  const bucket = new FakeBucket({ "vault/digests/2026-09-12.json": JSON.stringify(digest) });
+  const html = await (await worker.fetch(new Request("https://watch.example/2026-09-12"), env(bucket))).text();
+
+  assert.match(html, /id="industry"/);
+  assert.match(html, /<p class="implication">導入が全社展開の段階に &lt;入った&gt;<\/p>/);
+  assert.ok(html.indexOf('id="industry"') < html.indexOf('id="try"'));
+  assert.doesNotMatch(html, /data-item-id="aw-00000009"[^>]*data-check/);
+});
+
+test("業界の動きが無い旧digestでは枠を出さない", async () => {
+  const bucket = new FakeBucket({ "vault/digests/2026-09-12.json": JSON.stringify(DIGEST) });
+  const html = await (await worker.fetch(new Request("https://watch.example/2026-09-12"), env(bucket))).text();
+  assert.doesNotMatch(html, /id="industry"/);
+  assert.doesNotMatch(html, /業界の動き/);
+});
