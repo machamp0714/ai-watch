@@ -35,7 +35,8 @@ score = 0〜100 の総合。try 候補は上位 3 件がダイジェストに出
 - Speaker Deck のスライド（source が hatena-speakerdeck、または url が speakerdeck.com）は excerpt がほぼ無い。タイトルがプロファイルの興味領域（コーディングエージェント・LLM エージェント設計・評価など）に合えば read（score 40〜60）にし、summary は「〜についての登壇スライド」のようにタイトルから分かる範囲で書く。興味領域外なら noise でよい
 - source が claude-code-changelog / codex-releases のアイテム（Claude Code / Codex のリリース）は内容が薄くても必ず update にする（noise にしない）。本文が「Bug fixes」だけ・alpha 版などは score を低く（10〜30）し、summary は 1 項目でよい
 - 読者が skip_implicit したものと似た傾向のアイテムはスコアを下げる。try したものと似た傾向は上げる
-- 読者プロファイルの「除外」（資金調達・買収・人事など）に当たる話題でも、製品戦略・市場構造の変化・導入規模を示すものは industry にしてよい。単発の人事・金額だけのニュースは noise のまま
+- industry にするのは次の 2 種類だけ: (a) 読者が使うツールの提供元（Anthropic / OpenAI / Google / GitHub / Cursor 等）の価格・提供形態・方針・製品戦略の変更、(b) 企業での導入事例・大規模な開発や運用の事例（当事者の発信、または当事者の発信を分析した論考）
+- 資金調達・評価額・売上などの数字が主題の記事は、市場への示唆があっても noise にする（読者プロファイルの「除外」どおり）
 - industry の score は「業界の流れを読むうえでの重要度」で付ける。一次情報（公式発表・当事者の事例）を、それを要約しただけの記事より上にする
 - 出力は JSON Schema に従った JSON のみ
 
