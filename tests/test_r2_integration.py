@@ -62,6 +62,7 @@ def test_pull_and_push_results_round_trip_only_allowed_files(fake_aws):
     write_file(r2_root / "data/seen.sqlite", b"remote seen")
     write_file(r2_root / "data/decisions.jsonl", "remote decision\n")
     write_file(r2_root / "data/work/2026-09-12/collect.json", "{}")
+    write_file(r2_root / "data/state/html_diff/anthropic-news.json", "{}")
     write_file(r2_root / "data/raw/private.json", "private raw")
     write_file(
         r2_root / "data/playwright-profile/session.json",
@@ -77,6 +78,7 @@ def test_pull_and_push_results_round_trip_only_allowed_files(fake_aws):
     assert (runtime / "data/seen.sqlite").read_bytes() == b"remote seen"
     assert (runtime / "data/decisions.jsonl").read_text() == "remote decision\n"
     assert (runtime / "data/work/2026-09-12/collect.json").exists()
+    assert (runtime / "data/state/html_diff/anthropic-news.json").exists()
     assert not (runtime / "data/raw").exists()
     assert not (runtime / "data/playwright-profile").exists()
     assert not (runtime / "data/unlisted.txt").exists()

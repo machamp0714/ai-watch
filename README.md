@@ -204,7 +204,7 @@ uv run ai-watch-r2 push-results --root /path/to/runtime
 ```
 
 `vault/`は全体を同期する。
-`data/`は`seen.sqlite`、`decisions.jsonl`、`work/`だけを同期し、`raw/`と`playwright-profile/`は扱わない。
+`data/`は`seen.sqlite`、`decisions.jsonl`、`work/`、`state/html_diff/`だけを同期し、`raw/`と`playwright-profile/`は扱わない。
 `checks/`はWorkerが書いた操作記録をpullするだけで、nightlyからpushしない。
 nightlyは操作記録の項目ごとの最終状態を`sync_decisions`より前にMarkdownへ反映し、従来の判断回収経路へ渡す。
 `push-results`には`config/`を送る経路がなく、通常のnightlyが監視設定を上書きすることはない。
