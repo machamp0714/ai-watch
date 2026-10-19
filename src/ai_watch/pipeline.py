@@ -110,12 +110,13 @@ class NightlyReport:
 
 
 def _past_items(data_dir: Path, day: date, days: int = BASELINE_DAYS) -> list[list[Item]]:
-    """話題のベースライン用に、前日から days 日分の triage 済みアイテム（無い日・壊れた日は飛ばす）。"""
+    """話題のベースライン用に、前日から days 日分の triage 対象と下限で外したアイテム（無い日・壊れた日は飛ばす）。"""
     out: list[list[Item]] = []
     for n in range(1, days + 1):
         path = data_dir / "work" / (day - timedelta(days=n)).isoformat() / "triage.json"
         try:
-            out.append([Item.from_dict(d) for d in json.loads(path.read_text(encoding="utf-8"))["items"]])
+            data = json.loads(path.read_text(encoding="utf-8"))
+            out.append([Item.from_dict(d) for d in data["items"] + data.get("held_items", [])])
         except (OSError, ValueError, KeyError, TypeError):
             continue
     return out
@@ -259,7 +260,8 @@ def run_nightly(
                 profile_md = profile_md.rstrip() + "\n\n" + extra_profile
             outcome = triage(new_items, profile_md=profile_md, decisions=store.recent(30),
                              runner=runner, root=settings.root, day=day,
-                             trend_baseline=baseline_terms(_past_items(settings.data_dir, day)))
+                             trend_baseline=baseline_terms(_past_items(settings.data_dir, day)),
+                             trend_extra=held_items)
             work.save("triage", {
                 "items": [i.to_dict() for i in new_items],
                 "outcome": outcome.to_dict(),
@@ -271,10 +273,10 @@ def run_nightly(
         outcome = TriageOutcome.from_dict(t_data["outcome"])
 
         # 5. render + finalize -----------------------------------------------------
-        md = render_digest(day, {i.id: i for i in new_items}, outcome, warnings, total_collected=len(all_items))
+        md = render_digest(day, {i.id: i for i in new_items + held_items}, outcome, warnings, total_collected=len(all_items))
         digest_data = render_digest_data(
             day,
-            {i.id: i for i in new_items},
+            {i.id: i for i in new_items + held_items},
             outcome,
             warnings,
             total_collected=len(all_items),

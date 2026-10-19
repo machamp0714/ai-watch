@@ -198,12 +198,14 @@ def fallback_rank(items: list[Item]) -> list[TriagedItem]:
 def triage(
     items: list[Item], *, profile_md: str, decisions: list[Decision], runner: Any, root: Path, day: date,
     budget_usd: float = 2.0, trend_baseline: dict[str, float] | None = None,
+    trend_extra: list[Item] | None = None,
 ) -> TriageOutcome:
+    """trend_extra は話題クラスタの集計にだけ使うアイテム（反響の下限で triage から外した記事など）。"""
     if not items:
         return TriageOutcome("triaged", [], 0.0)
     template = (root / "prompts" / "triage.md").read_text(encoding="utf-8")
     schema = json.loads((root / "schemas" / "triage.schema.json").read_text(encoding="utf-8"))
-    trends = detect_trends(items, baseline=trend_baseline)
+    trends = detect_trends(items + list(trend_extra or []), baseline=trend_baseline)
     prompt = build_prompt(template, items, profile_md, decisions, day, trends)
     res = runner.run(prompt, schema, budget_usd=budget_usd, effort="low", retries=1)
     if not res.ok:
