@@ -680,3 +680,41 @@ def test_split_below_min_likes_keeps_unknown_likes_and_items_seen_elsewhere(tmp_
 
     assert held == [small]
     assert kept == [rss_only, elsewhere]
+
+
+def test_nightly_counts_held_zenn_articles_in_trend_clusters(tmp_path, monkeypatch):
+    class SmallArticles:
+        def fetch(self, cfg, window, ctx):
+            items = [RawItem(
+                source=cfg.id,
+                url=f"https://zenn.dev/{cfg.id}/articles/argon-{n}",
+                title={
+                    "zenn-a": ["Argon で家計簿を作る", "Argon の設定を見直す"],
+                    "zenn-b": ["Argon とテスト自動化", "Argon 導入で困った点"],
+                    "zenn-c": ["Argon を社内に広める", "Argon の料金を比べる"],
+                }[cfg.id][n],
+                published_at=datetime(2026, 8, 22, tzinfo=timezone.utc),
+                metrics={"likes": 3},
+                lang="ja",
+            ) for n in range(2)]
+            if cfg.id == "zenn-a":
+                items.append(RawItem(
+                    source=cfg.id, url="https://zenn.dev/zenn-a/articles/popular",
+                    title="反響の大きい Argon 解説", published_at=datetime(2026, 8, 22, tzinfo=timezone.utc),
+                    metrics={"likes": 80}, lang="ja",
+                ))
+            return items
+
+    monkeypatch.setitem(ADAPTERS, "small_zenn", SmallArticles())
+    settings = _settings(tmp_path)
+    settings.sources = [
+        SourceConfig(id=f"zenn-{x}", type="small_zenn", group="jp", params={"min_likes": 30})
+        for x in "abc"
+    ]
+
+    run_nightly(settings, DAY, now=NOW, runner=FakeRunner(), http=_http(), notifier=lambda *args: None)
+    digest = json.loads(Vault(settings.vault_dir).digest_path(DAY).with_suffix(".json").read_text())
+
+    assert [t["label"] for t in digest["trends"]] == ["Argon"]
+    assert digest["trends"][0]["count"] == 7
+    assert digest["items_shown"] == 1

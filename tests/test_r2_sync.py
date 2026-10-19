@@ -399,7 +399,7 @@ def test_push_results_can_only_sync_vault_and_allowed_data(tmp_path):
     assert "s3://example-private-bucket/vault/" in " ".join(vault)
     assert "s3://example-private-bucket/data/" in " ".join(data)
     assert data[data.index("--exclude") + 1] == "*"
-    assert include_values(data) == ["seen.sqlite", "decisions.jsonl", "work/*"]
+    assert include_values(data) == ["seen.sqlite", "decisions.jsonl", "work/*", "state/html_diff/*"]
     assert "--no-follow-symlinks" in vault
     assert "--no-follow-symlinks" in data
     assert "--delete" not in joined
@@ -431,7 +431,7 @@ def test_pull_syncs_results_only_after_watchlist_is_replaced(tmp_path):
     assert "s3://example-private-bucket/data/" in calls[3]
     assert "s3://example-private-bucket/checks/" in calls[4]
     assert str(root / "checks") + "/" in calls[4]
-    assert include_values(calls[3]) == ["seen.sqlite", "decisions.jsonl", "work/*"]
+    assert include_values(calls[3]) == ["seen.sqlite", "decisions.jsonl", "work/*", "state/html_diff/*"]
     assert "--delete" not in " ".join(" ".join(call) for call in calls)
 
 

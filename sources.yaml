@@ -116,14 +116,6 @@ sources:
     type: rss
     group: en
     url: https://www.oneusefulthing.org/feed
-  - id: stratechery              # Ben Thompson。事業・戦略
-    type: rss
-    group: en
-    url: https://stratechery.com/feed/
-  - id: addy-osmani
-    type: rss
-    group: en
-    url: https://addyo.substack.com/feed
   - id: hamel
     type: rss
     group: en

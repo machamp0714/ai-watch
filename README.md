@@ -16,7 +16,7 @@ flowchart TD
 
     subgraph C1["1. collect — HTTP のみ / LLM 不使用"]
         direction LR
-        SRC["sources.yaml<br/>公式 15 / EN 13 / JP 7 ソース"] --> AD["adapters<br/>rss・github_releases・github_file_sections<br/>hn_algolia・html_diff・note_search・zenn"]
+        SRC["sources.yaml<br/>公式 15 / EN 11 / JP 7 ソース"] --> AD["adapters<br/>rss・github_releases・github_file_sections<br/>hn_algolia・html_diff・note_search・zenn"]
         AD -->|"ホスト単位で直列化 + 2s delay<br/>ソース単位で例外を隔離 → warnings"| RAW[("data/raw/&lt;date&gt;/&lt;source&gt;.json")]
     end
 
@@ -36,7 +36,7 @@ flowchart TD
     end
 
     BL --> NRM["normalize<br/>URL 正規化 → 同一 URL を束ね → タイトル Jaccard ≥ 0.8 で束ね"]
-    NRM --> SEEN[("data/seen.sqlite<br/>30 日以内に見た id を除外<br/>未表示のZenn記事は人気度の節目で再評価<br/>Zenn は likes 30 未満を triage に回さない")]
+    NRM --> SEEN[("data/seen.sqlite<br/>30 日以内に見た id を除外<br/>未表示のZenn記事は人気度の節目で再評価<br/>Zenn は likes 30 未満を triage に回さない（話題クラスタの集計には使う）")]
     SEEN --> PR
 
     subgraph C4["4. triage — LLM 使用"]
@@ -72,7 +72,7 @@ flowchart TD
     CHECKS --> PULL
 ```
 
-LLM（`claude -p`）を使うのは **x_collect と triage の 2 箇所だけ**。残りの 35 ソースの収集は素の HTTP で、トークンを消費しない。
+LLM（`claude -p`）を使うのは **x_collect と triage の 2 箇所だけ**。残りの 33 ソースの収集は素の HTTP で、トークンを消費しない。
 
 `--dry-run` を付けるとvaultには書かず、`data/work/<date>/digest.md`と`digest.json`へ出力する。
 この場合は`sync_decisions`と`seen.sqlite`への書き込みもスキップする。
@@ -204,7 +204,7 @@ uv run ai-watch-r2 push-results --root /path/to/runtime
 ```
 
 `vault/`は全体を同期する。
-`data/`は`seen.sqlite`、`decisions.jsonl`、`work/`だけを同期し、`raw/`と`playwright-profile/`は扱わない。
+`data/`は`seen.sqlite`、`decisions.jsonl`、`work/`、`state/html_diff/`だけを同期し、`raw/`と`playwright-profile/`は扱わない。
 `checks/`はWorkerが書いた操作記録をpullするだけで、nightlyからpushしない。
 nightlyは操作記録の項目ごとの最終状態を`sync_decisions`より前にMarkdownへ反映し、従来の判断回収経路へ渡す。
 `push-results`には`config/`を送る経路がなく、通常のnightlyが監視設定を上書きすることはない。

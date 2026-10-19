@@ -52,6 +52,8 @@ DATA_FILTER_ARGS = (
     "decisions.jsonl",
     "--include",
     "work/*",
+    "--include",
+    "state/html_diff/*",   # html_diff の既出リンク。無いと毎回初回扱いで 0 件になる
 )
 
 
