@@ -23,7 +23,7 @@ def test_nightly_has_schedule_manual_trigger_and_single_writer():
     workflow = _workflow("nightly.yml")
 
     assert workflow["on"]["schedule"] == [{"cron": "0 20 * * *"}]
-    assert workflow["on"]["workflow_dispatch"] == ""
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["weekly"]["default"] == "false"
     assert workflow["concurrency"] == {
         "group": "ai-watch-nightly",
         "cancel-in-progress": "false",
@@ -50,6 +50,20 @@ def test_nightly_runs_pull_then_pipeline_then_push_without_x():
     assert "create-watchlist" not in all_commands
     assert "update-watchlist" not in all_commands
     assert "config/" not in commands[push]
+
+
+def test_nightly_writes_weekly_on_monday_jst_before_push_without_failing_the_run():
+    steps = _steps(_workflow("nightly.yml"), "nightly")
+    commands = [step.get("run", "") for step in steps]
+    nightly = next(i for i, command in enumerate(commands) if "ai-watch nightly" in command)
+    weekly = next(i for i, command in enumerate(commands) if "ai-watch weekly" in command)
+    push = next(i for i, command in enumerate(commands) if "ai-watch-r2 push-results" in command)
+
+    assert nightly < weekly < push
+    assert 'TZ=Asia/Tokyo date +%u)" = "1"' in commands[weekly]
+    assert '"$FORCE_WEEKLY" = "true"' in commands[weekly]
+    assert "|| echo" in commands[weekly]
+    assert "secrets.R2_ACCESS_KEY_ID" not in "\n".join(steps[weekly]["env"].values())
 
 
 def test_nightly_limits_secrets_to_required_steps_and_does_not_publish_results():
