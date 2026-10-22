@@ -403,7 +403,82 @@ export function renderDigestPage(digest, checkStates, nonce) {
 }
 
 
-export function renderListPage(entries, nonce) {
+function weeklyRef(ref) {
+  return `<article class="reading-item">
+    <h3 class="item-title"><a href="${safeUrl(ref.url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(ref.title)}</a></h3>
+    <p class="source">${escapeHtml(ref.source)}・${escapeHtml(ref.date)} ↗</p>
+    ${ref.implication ? `<p class="implication">${escapeHtml(ref.implication)}</p>` : ""}
+  </article>`;
+}
+
+
+const TOPIC_STATUS = { new: "新規", rising: "伸び" };
+
+
+function weeklyTopic(topic) {
+  const official = (topic.official || []).filter((ref) => ref.url !== topic.origin?.url);
+  const top = (topic.top || []).filter((ref) => ref.url !== topic.origin?.url);
+  return `<div class="trend">
+    <h3 class="trend-title">${escapeHtml(topic.label)} <span class="section-count">${Number(topic.count) || 0}件（前週 ${Number(topic.prev_count) || 0}件）・${TOPIC_STATUS[topic.status] || ""}</span></h3>
+    ${topic.origin ? `<p class="sidebar-note">起点</p><div class="reading-list">${weeklyRef(topic.origin)}</div>` : ""}
+    ${official.length ? `<p class="sidebar-note">公式の一次情報</p><div class="reading-list">${official.map(weeklyRef).join("")}</div>` : ""}
+    ${top.length ? `<p class="sidebar-note">代表記事</p><div class="reading-list">${top.map(weeklyRef).join("")}</div>` : ""}
+  </div>`;
+}
+
+
+function changeList(label, rows) {
+  if (!rows?.length) return "";
+  return `<p class="section-copy">${label}: ${rows.map((row) => `${escapeHtml(row.label)}（${Number(row.prev_count) || 0}→${Number(row.count) || 0}）`).join("、")}</p>`;
+}
+
+
+export function renderWeeklyPage(weekly, nonce) {
+  const period = weekly.period || {};
+  const narrative = weekly.narrative;
+  const topics = weekly.topics || [];
+  const industry = weekly.industry || [];
+  const updates = weekly.updates || [];
+  const tries = weekly.try || [];
+  const missing = (period.missing || []).map(escapeHtml).join(", ");
+  const flow = narrative ? `<ul class="summary-lines">${(narrative.flow || []).map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul>` : "";
+  const moves = narrative ? `<div class="reading-list">${(narrative.next_moves || []).map((move) => `<article class="reading-item">
+      <h3 class="item-title">[${escapeHtml(move.kind)}] ${escapeHtml(move.title)}</h3>
+      <p class="reason">${escapeHtml(move.why)}</p>
+    </article>`).join("")}</div>` : "";
+  const main = `<main class="page digest-layout">
+    <aside class="sidebar">
+      <a class="button" href="/">← 日付一覧</a>
+      <div class="sidebar-date">${escapeHtml(period.start)}〜${escapeHtml(period.end)}</div>
+      <nav class="toc" aria-label="ページ内の目次">
+        ${narrative ? '<a href="#flow">今週の流れ</a><a href="#moves">次の一手</a>' : ""}
+        <a href="#topics">話題の伸び <span>${topics.length}</span></a>
+        <a href="#industry">業界の動き <span>${industry.length}</span></a>
+        <a href="#update">公式アップデート <span>${updates.length}</span></a>
+        <a href="#try">試す候補 <span>${tries.length}</span></a>
+      </nav>
+    </aside>
+    <div class="digest-main">
+      <header class="digest-head">
+        <div class="eyebrow">${escapeHtml(period.start)}〜${escapeHtml(period.end)}</div>
+        <h1>週次トレンド</h1>
+        <p class="metrics">${(period.days || []).length}日分・${Number(weekly.items_total) || 0}件を前週と比較</p>
+        ${missing ? `<div class="warning" role="status">データなし: ${missing}</div>` : ""}
+      </header>
+      ${narrative ? section("01", "flow", "今週の流れ", (narrative.flow || []).length, "集計をもとに LLM がまとめた今週の動き。（推測）とある行は集計から直接は言えない内容。", flow) : ""}
+      ${narrative ? section("02", "moves", "次の一手", (narrative.next_moves || []).length, "今週のうちに試す・発信する・追うこと。", moves) : ""}
+      ${section("03", "topics", "話題の伸び", topics.length, "前週より件数が伸びた、または新しく出た話題と、その起点の記事。", `${topics.map(weeklyTopic).join("") || '<p class="muted">前週より伸びた話題はありません。</p>'}${changeList("続いている話題", weekly.continuing)}${changeList("落ちた話題", weekly.falling)}`)}
+      ${section("04", "industry", "業界の動き", industry.length, "今週の方針変更・導入事例と、そこから読める示唆。", `<div class="reading-list">${industry.map(weeklyRef).join("")}</div>`)}
+      ${section("05", "update", "公式アップデート", updates.length, "今週出た公式のリリース。", `<div class="reading-list">${updates.map(weeklyRef).join("")}</div>`, false)}
+      ${section("06", "try", "試す候補", tries.length, "今週の試す候補の上位。", `<div class="reading-list">${tries.map(weeklyRef).join("")}</div>`, false)}
+      <div class="actions"><a class="button" href="/">← 日付一覧に戻る</a></div>
+    </div>
+  </main>`;
+  return layout("週次トレンド", main, nonce);
+}
+
+
+export function renderListPage(entries, nonce, latestWeekly = null) {
   const latest = entries[0];
   const latestCounts = latest?.digest ? counts(latest.digest) : null;
   let currentMonth = "";
@@ -419,11 +494,16 @@ export function renderListPage(entries, nonce) {
     ${latestCounts ? `<p>${latest.digest.sections?.industry ? `業界の動き ${latestCounts.industry}件 ・ ` : ""}試す候補 ${latestCounts.try}件 ・ 公式アップデート ${latestCounts.update}件 ・ 読む ${latestCounts.read}件 ・ 注目 ${latestCounts.overflow}件</p>` : ""}
     <a class="button primary" href="/${latest.date}">↗ 今日の${Number(latest.digest?.items_shown) || 0}件を読む</a>
   </section>` : '<p class="muted">生成済みのダイジェストはありません。</p>';
-  return layout("ダイジェスト", `<main class="list-main"><h1>ダイジェスト</h1><p class="lede">日付を選んで、その日に集まった AI の話題を読む。</p>${latestCard}${rows}<p class="footer-note">生成済みの日付を新しい順に表示しています。</p></main>`, nonce, { compact: true });
+  const weeklyCard = latestWeekly ? `<section class="latest">
+    <div class="latest-label">週次トレンド</div>
+    <h2>${escapeHtml(latestWeekly.start)}〜${escapeHtml(latestWeekly.end)}</h2>
+    <a class="button" href="/weekly/${escapeHtml(latestWeekly.end)}">↗ 今週のトレンドを読む</a>
+  </section>` : "";
+  return layout("ダイジェスト", `<main class="list-main"><h1>ダイジェスト</h1><p class="lede">日付を選んで、その日に集まった AI の話題を読む。</p>${latestCard}${weeklyCard}${rows}<p class="footer-note">生成済みの日付を新しい順に表示しています。</p></main>`, nonce, { compact: true });
 }
 
 
-export function renderMissingPage(date, nonce) {
+export function renderMissingPage(date, nonce, { weekly = false } = {}) {
   const label = dateParts(date).full;
-  return layout("未生成のダイジェスト", `<main class="empty-main"><div class="empty-icon" aria-hidden="true">◴</div><p class="eyebrow">${escapeHtml(label)}</p><h1>この日のダイジェストは\nまだありません</h1><p class="muted">生成されたダイジェストは、日付一覧から読むことができます。時間をおいて、もう一度確認してください。</p><div class="actions"><a class="button primary" href="/">← 日付一覧へ</a><a class="button" href="/${escapeHtml(date)}">↻ もう一度確認</a></div></main>`, nonce, { compact: true });
+  return layout(weekly ? "未生成の週次トレンド" : "未生成のダイジェスト", `<main class="empty-main"><div class="empty-icon" aria-hidden="true">◴</div><p class="eyebrow">${escapeHtml(label)}</p><h1>${weekly ? "この週の週次トレンドは" : "この日のダイジェストは"}\nまだありません</h1><p class="muted">生成されたダイジェストは、日付一覧から読むことができます。時間をおいて、もう一度確認してください。</p><div class="actions"><a class="button primary" href="/">← 日付一覧へ</a><a class="button" href="/${weekly ? "weekly/" : ""}${escapeHtml(date)}">↻ もう一度確認</a></div></main>`, nonce, { compact: true });
 }

@@ -343,3 +343,70 @@ test("業界の動きが無い旧digestでは枠を出さない", async () => {
   assert.doesNotMatch(html, /id="industry"/);
   assert.doesNotMatch(html, /業界の動き/);
 });
+
+const WEEKLY = {
+  period: { start: "2026-10-13", end: "2026-10-19", days: ["2026-10-19"], missing: ["2026-10-13"] },
+  previous: { start: "2026-10-06", end: "2026-10-12", days: [], missing: [] },
+  items_total: 1242,
+  narrative: {
+    flow: ["Argon が <新規> で出た"],
+    next_moves: [{ kind: "試す", title: "Argon を触る", why: "公式発表が出た" }]
+  },
+  topics: [
+    {
+      label: "Argon", count: 12, prev_count: 0, status: "new", sources: ["google", "zenn"],
+      origin: { title: "Introducing Argon", url: "https://example.com/argon", source: "google", date: "2026-10-13" },
+      official: [{ title: "Introducing Argon", url: "https://example.com/argon", source: "google", date: "2026-10-13" }],
+      top: [{ title: "Argon を試した", url: "https://example.com/try", source: "zenn", date: "2026-10-14" }]
+    }
+  ],
+  continuing: [{ label: "Jev", count: 16, prev_count: 22 }],
+  falling: [{ label: "Haiku", count: 8, prev_count: 26 }],
+  industry: [{ id: "aw-00000009", title: "架空銀行の全社導入", url: "https://example.com/bank", source: "openai-news", date: "2026-10-16", implication: "規制業界でも進む" }],
+  updates: [{ id: "aw-00000002", title: "架空API 2.0", url: "https://example.com/api", source: "sample-release", date: "2026-10-15" }],
+  try: [],
+  read: [],
+  cost_usd: 0.1
+};
+
+test("週次ページは流れ・次の一手・話題の伸びを描画する", async () => {
+  const bucket = new FakeBucket({ "vault/weekly/2026-10-19.json": JSON.stringify(WEEKLY) });
+  const response = await worker.fetch(new Request("https://watch.example/weekly/2026-10-19"), env(bucket));
+  const html = await response.text();
+
+  assert.equal(response.status, 200);
+  assert.match(html, /週次トレンド/);
+  assert.match(html, /Argon が &lt;新規&gt; で出た/);
+  assert.match(html, /\[試す\] Argon を触る/);
+  assert.match(html, /Argon <span class="section-count">12件（前週 0件）・新規/);
+  assert.match(html, /起点/);
+  assert.match(html, /Jev（22→16）/);
+  assert.match(html, /Haiku（26→8）/);
+  assert.match(html, /<p class="implication">規制業界でも進む<\/p>/);
+  assert.match(html, /データなし: 2026-10-13/);
+  assert.doesNotMatch(html, /data-check/);
+});
+
+test("未生成の週次は404で案内する", async () => {
+  const response = await worker.fetch(new Request("https://watch.example/weekly/2026-10-19"), env(new FakeBucket()));
+  assert.equal(response.status, 404);
+  assert.match(await response.text(), /日付一覧へ/);
+});
+
+test("日付一覧は最新の週次トレンドへのリンクを出す", async () => {
+  const bucket = new FakeBucket({
+    "vault/digests/2026-10-19.json": JSON.stringify({ ...DIGEST, date: "2026-10-19" }),
+    "vault/weekly/2026-10-12.json": JSON.stringify(WEEKLY),
+    "vault/weekly/2026-10-19.json": JSON.stringify(WEEKLY),
+    "vault/weekly/2026-10-19.md": "本文"
+  });
+  const html = await (await worker.fetch(new Request("https://watch.example/"), env(bucket))).text();
+  assert.match(html, /href="\/weekly\/2026-10-19"/);
+  assert.doesNotMatch(html, /href="\/weekly\/2026-10-12"/);
+});
+
+test("週次が無ければ日付一覧に週次の枠を出さない", async () => {
+  const bucket = new FakeBucket({ "vault/digests/2026-09-12.json": JSON.stringify(DIGEST) });
+  const html = await (await worker.fetch(new Request("https://watch.example/"), env(bucket))).text();
+  assert.doesNotMatch(html, /週次トレンド/);
+});

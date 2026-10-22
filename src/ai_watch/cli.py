@@ -16,6 +16,7 @@ from .doctor import cmd_doctor
 from .pipeline import STAGES, run_nightly, today_jst
 from .vault import Vault, init_vault
 from .watchlist import WatchlistError, watchlist_rows
+from .weekly import weekly
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -46,6 +47,19 @@ def cmd_nightly(settings: Settings, args: argparse.Namespace) -> int:
         retriage=args.retriage,
     )
     print(json.dumps(report.to_dict(), ensure_ascii=False, indent=1))
+    return 0
+
+
+def cmd_weekly(settings: Settings, args: argparse.Namespace) -> int:
+    end = _day(args.date)
+    vault = Vault(settings.vault_dir)
+    runner = None if args.no_llm else ClaudeRunner(settings.claude_bin, settings.model, cwd=settings.root)
+    agg, md, cost = weekly(settings.data_dir, end, root=settings.root, profile_md=vault.read_profile(), runner=runner)
+    agg["cost_usd"] = cost
+    Vault.write_atomic(vault.weekly / f"{end.isoformat()}.json", json.dumps(agg, ensure_ascii=False, indent=1))
+    Vault.write_atomic(vault.weekly / f"{end.isoformat()}.md", md)
+    print(json.dumps({"end": end.isoformat(), "days": len(agg["period"]["days"]), "topics": len(agg["topics"]),
+                      "narrative": agg["narrative"] is not None, "cost_usd": cost}, ensure_ascii=False))
     return 0
 
 
@@ -103,6 +117,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help="過去日の選別をやり直す（--from triage と併用。当日のアイテムを再判定し seen は更新しない）")
     n.add_argument("--skip-x-collect", action="store_true", help="X収集を行わず空の段階結果を保存")
     n.set_defaults(func=cmd_nightly)
+
+    w = sub.add_parser("weekly", help="直近 7 日の triage 結果から週次トレンドを vault/weekly/ に書く")
+    w.add_argument("--date", help="週の最終日 YYYY-MM-DD（既定: 今日 JST）")
+    w.add_argument("--no-llm", action="store_true", help="LLM の考察を付けず集計だけ出す")
+    w.set_defaults(func=cmd_weekly)
 
     c = sub.add_parser("collect", help="X 以外のソースを取得して件数と失敗を表示")
     c.add_argument("--date")

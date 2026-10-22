@@ -1,9 +1,10 @@
-import { renderDigestPage, renderListPage, renderMissingPage } from "./page.js";
+import { renderDigestPage, renderListPage, renderMissingPage, renderWeeklyPage } from "./page.js";
 
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ITEM_ID = /^aw-[0-9a-f]{8}$/;
 const DIGEST_PREFIX = "vault/digests/";
+const WEEKLY_PREFIX = "vault/weekly/";
 
 
 function nonce() {
@@ -43,13 +44,13 @@ async function readJson(bucket, key) {
 }
 
 
-async function listDigestDates(bucket) {
+async function listDates(bucket, prefix = DIGEST_PREFIX) {
   const dates = [];
   let cursor;
   do {
-    const page = await bucket.list({ prefix: DIGEST_PREFIX, cursor });
+    const page = await bucket.list({ prefix, cursor });
     for (const object of page.objects) {
-      const match = object.key.match(/^vault\/digests\/(\d{4}-\d{2}-\d{2})\.json$/);
+      const match = object.key.slice(prefix.length).match(/^(\d{4}-\d{2}-\d{2})\.json$/);
       if (match) dates.push(match[1]);
     }
     cursor = page.truncated ? page.cursor : undefined;
@@ -132,7 +133,7 @@ async function handleCheck(request, env, date, id, url) {
 
 
 async function handleList(env, token) {
-  const dates = await listDigestDates(env.AI_WATCH_BUCKET);
+  const dates = await listDates(env.AI_WATCH_BUCKET);
   const entries = [];
   for (const date of dates) {
     let digest = null;
@@ -145,7 +146,28 @@ async function handleList(env, token) {
     }
     entries.push({ date, digest });
   }
-  return htmlResponse(renderListPage(entries, token), token);
+  const [latestWeekly] = await listDates(env.AI_WATCH_BUCKET, WEEKLY_PREFIX);
+  let weekly = null;
+  if (latestWeekly) {
+    try {
+      weekly = (await readJson(env.AI_WATCH_BUCKET, `${WEEKLY_PREFIX}${latestWeekly}.json`))?.period || null;
+    } catch {
+      weekly = null;
+    }
+  }
+  return htmlResponse(renderListPage(entries, token, weekly), token);
+}
+
+
+async function handleWeekly(env, date, token) {
+  let weekly;
+  try {
+    weekly = await readJson(env.AI_WATCH_BUCKET, `${WEEKLY_PREFIX}${date}.json`);
+  } catch {
+    return htmlResponse(renderMissingPage(date, token, { weekly: true }), token, 502);
+  }
+  if (!weekly) return htmlResponse(renderMissingPage(date, token, { weekly: true }), token, 404);
+  return htmlResponse(renderWeeklyPage(weekly, token), token);
 }
 
 
@@ -175,6 +197,10 @@ export default {
     const digest = url.pathname.match(/^\/(\d{4}-\d{2}-\d{2})\/?$/);
     if (request.method === "GET" && digest) {
       return handleDigest(env, digest[1], nonce());
+    }
+    const weekly = url.pathname.match(/^\/weekly\/(\d{4}-\d{2}-\d{2})\/?$/);
+    if (request.method === "GET" && weekly) {
+      return handleWeekly(env, weekly[1], nonce());
     }
     return new Response("Not Found", { status: 404 });
   }

@@ -137,3 +137,18 @@ sources:
     ]
     assert not (tmp_path / "vault").exists()
     assert not (tmp_path / "data").exists()
+
+
+def test_weekly_writes_json_and_markdown_to_vault(tmp_path, capsys):
+    day = tmp_path / "data" / "work" / "2026-10-19"
+    day.mkdir(parents=True)
+    day.joinpath("triage.json").write_text(json.dumps({
+        "items": [], "held_items": [],
+        "outcome": {"mode": "triaged", "triaged": [], "cost_usd": 0.0, "error": "", "trends": []},
+    }))
+    assert main(["--config", str(_cfg(tmp_path)), "weekly", "--date", "2026-10-19", "--no-llm"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["end"] == "2026-10-19" and out["days"] == 1 and out["narrative"] is False
+    saved = json.loads((tmp_path / "vault" / "weekly" / "2026-10-19.json").read_text())
+    assert saved["period"]["end"] == "2026-10-19" and saved["cost_usd"] == 0.0
+    assert (tmp_path / "vault" / "weekly" / "2026-10-19.md").read_text().startswith("# 週次トレンド 2026-10-13〜2026-10-19")

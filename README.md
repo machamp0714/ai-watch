@@ -230,6 +230,8 @@ GitHub Actionsからの呼び出しとcron設定は、次のnightly workflowで�
 同時実行は`ai-watch-nightly` concurrency groupで直列化し、実行中のjobを途中で打ち切らない。
 
 実行順はR2からのpull、`ai-watch nightly --skip-x-collect`、R2への`push-results`である。
+月曜朝（JST）の実行と、手動実行で`weekly`入力を有効にしたときだけ、nightlyの後に`ai-watch weekly`で週次トレンドを作る。
+週次の作成に失敗しても警告だけ出し、日次の成果物は保存する。
 pullまたはnightlyが失敗した場合は後続へ進まず、実行URLだけを載せたGitHub Issueで通知する。
 nightlyのJSON出力、監視設定、ダイジェスト本文はActionsログやartifactへ公開しない。
 
@@ -269,6 +271,7 @@ workflowは公開サンプルへのフォールバックや設定の初回登録
 
 Workerは`AI_WATCH_BUCKET`というR2 bindingから`vault/digests/<date>.json`を読み、`/`に日付一覧、`/<date>`にダイジェストを表示する。
 R2のS3互換アクセスキーをWorkerへ渡す必要はなく、bindingがR2への権限を持つ。
+`vault/weekly/<最終日>.json`があれば、日付一覧に最新の週次トレンドへのリンクを出し、`/weekly/<最終日>`に表示する。
 存在しない日付は500ではなく、再確認と日付一覧への導線を持つ404画面になる。
 
 UIは[`ai-watch.pen`](ai-watch.pen)を正本とし、PCでは日付・カテゴリのsidebarと本文、モバイルでは1カラムと2×2のカテゴリ移動を表示する。
@@ -307,6 +310,8 @@ uv run ai-watch nightly                     # 本番
 uv run ai-watch nightly --from triage       # 収集済みデータから再トリアージ
 uv run ai-watch nightly --date 2026-09-19 --from triage --retriage   # 過去日の選別をやり直す（seen は更新しない）
 uv run ai-watch collect --only hn           # 1 ソースだけ疎通
+uv run ai-watch weekly                      # 直近7日（今日まで）の週次トレンドを vault/weekly/ に出す
+uv run ai-watch weekly --date 2026-10-19 --no-llm   # 最終日を指定し、LLM の考察なしで集計だけ出す
 uv run ai-watch sync                        # ダイジェストのチェックを今すぐ反映
 ```
 

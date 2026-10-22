@@ -14,6 +14,8 @@ class Vault:
     @property
     def digests(self) -> Path: return self.root / "digests"
     @property
+    def weekly(self) -> Path: return self.root / "weekly"
+    @property
     def experiments(self) -> Path: return self.root / "experiments"
     @property
     def backlog(self) -> Path: return self.root / "backlog.md"
