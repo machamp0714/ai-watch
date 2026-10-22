@@ -64,6 +64,9 @@ def test_nightly_writes_weekly_on_monday_jst_before_push_without_failing_the_run
     assert '"$FORCE_WEEKLY" = "true"' in commands[weekly]
     assert "|| echo" in commands[weekly]
     assert "secrets.R2_ACCESS_KEY_ID" not in "\n".join(steps[weekly]["env"].values())
+    # nightly と同じ設定（vault・data・watchlist・checks）で読む。欠けると設定エラーが警告に埋もれる
+    nightly_paths = {k: v for k, v in steps[nightly]["env"].items() if k.startswith("AI_WATCH_")}
+    assert {k: steps[weekly]["env"].get(k) for k in nightly_paths} == nightly_paths
 
 
 def test_nightly_limits_secrets_to_required_steps_and_does_not_publish_results():

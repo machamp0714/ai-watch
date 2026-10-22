@@ -195,7 +195,8 @@ def build_prompt(template: str, agg: dict[str, Any], profile_md: str) -> str:
 
 
 def _link(ref: dict[str, Any]) -> str:
-    return f"[{ref['title']}]({ref['url']})（{ref['source']}・{ref['date']}）"
+    title = ref["title"].replace("|", "\\|")   # 表のセル区切りにならないように
+    return f"[{title}]({ref['url']})（{ref['source']}・{ref['date']}）"
 
 
 def render_markdown(agg: dict[str, Any], narrative: dict[str, Any] | None) -> str:

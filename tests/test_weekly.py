@@ -141,3 +141,11 @@ def test_generic_tech_words_are_not_topics(tmp_path):
     _write_day(tmp_path, END, _topic_rows("w", "Python", END, 10))
     agg = aggregate(load_week(tmp_path, END), load_week(tmp_path, END - timedelta(days=7)))
     assert agg["topics"] == []
+
+
+def test_pipe_in_title_does_not_break_markdown_table(tmp_path):
+    rows = [(_item(f"a{k}", f"Argon | review {k}", END, source=f"s{k % 3}"), "read", "") for k in range(8)]
+    _write_day(tmp_path, END, rows)
+    md = render_markdown(aggregate(load_week(tmp_path, END), load_week(tmp_path, END - timedelta(days=7))), None)
+    row = next(l for l in md.splitlines() if l.startswith("| Argon"))
+    assert "Argon \\| review" in row and row.count(" | ") == 5
